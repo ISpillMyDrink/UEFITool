@@ -250,6 +250,12 @@ void UEFITool::populateUi(const QModelIndex &current)
     //ui->actionReplace->setEnabled((type == Types::Region && subtype != Subtypes::DescriptorRegion) || type == Types::Volume || type == Types::File || type == Types::Section);
     //ui->actionReplaceBody->setEnabled(type == Types::Volume || type == Types::File || type == Types::Section);
 
+    // Enable "Replace as is" for most non-compressed, non-checksummed objects
+    ui->actionReplace->setEnabled(!(model->compressed(model->parent(current)) || (model->type(model->parent(current)) == Types::File) || model->type(model->index(0,0)) == Types::Capsule) && (type == Types::Region || type == Types::Volume || type == Types::File || type == Types::Section || type == Types::Padding || type == Types::VssStore || type == Types::Vss2Store ||type == Types::FdcStore || type == Types::FsysStore || type == Types::EvsaStore));
+
+    // Enable "Replace body" for volumes
+    ui->actionReplaceBody->setEnabled(model->type(model->index(0,0)) != Types::Capsule && type == Types::Volume);
+
     ui->menuMessageActions->setEnabled(false);
 }
 
@@ -439,8 +445,111 @@ void UEFITool::replaceBody()
 
 void UEFITool::replace(const UINT8 mode)
 {
-    U_UNUSED_PARAMETER(mode);
+    // Get the current selection
+    QModelIndex index = ui->structureTreeView->selectionModel()->currentIndex();
+    if (!index.isValid())
+        return;
 
+    UINT8 type = model->type(index);
+
+    UINT32 base = model->base(index);
+    INT32 size;
+
+    QString path;
+
+    if (mode == REPLACE_MODE_BODY)
+    {
+        switch(type)
+        {
+            case Types::Volume:         path = QFileDialog::getOpenFileName(this, tr("Select volume body for replacement"),  currentDir, tr("Volume body files (*.vbd *.bin);;All files (*)"));   break;
+            case Types::File:           path = QFileDialog::getOpenFileName(this, tr("Select FFS file body for replacement"),currentDir, tr("FFS file body files (*.fbd *.bin);;All files (*)"));      break;
+            case Types::Section:        path = QFileDialog::getOpenFileName(this, tr("Select section body for replacement"), currentDir, tr("Section files (*.sct *.bin);;All files (*)"));  break;
+            default:                    path = QFileDialog::getOpenFileName(this, tr("Select binary for replacement"),  currentDir, tr("Binary files (*.bin);;All files (*)"));         break;
+        }
+
+        base += model->header(index).size();
+        size = model->body(index).size();
+    }
+    else if (mode == REPLACE_MODE_AS_IS)
+    {
+        switch (type)
+        {
+            case Types::Region:         path = QFileDialog::getOpenFileName(this, tr("Select region for replacement"),  currentDir, tr("Region files (*.rgn *.bin);;All files (*)"));       break;
+            case Types::Padding:        path = QFileDialog::getOpenFileName(this, tr("Select padding for replacement"), currentDir, tr("Padding files (*.pad *.bin);;All files (*)"));      break;
+            case Types::Volume:         path = QFileDialog::getOpenFileName(this, tr("Select volume for replacement"),  currentDir, tr("Volume files (*.vol *.bin);;All files (*)"));       break;
+            case Types::File:           path = QFileDialog::getOpenFileName(this, tr("Select FFS file for replacement"),currentDir, tr("FFS files (*.ffs *.bin);;All files (*)"));          break;
+            case Types::Section:        path = QFileDialog::getOpenFileName(this, tr("Select section for replacement"), currentDir, tr("Section files (*.sct *.bin);;All files (*)"));      break;
+            case Types::VssStore:       path = QFileDialog::getOpenFileName(this, tr("Select VSS store for replacement"), currentDir, tr("VSS store files (*.vss *.bin);;All files (*)"));  break;
+            case Types::Vss2Store:      path = QFileDialog::getOpenFileName(this, tr("Select VSS2 store for replacement"), currentDir, tr("VSS2 store files (*.vss2 *.bin);;All files (*)"));      break;
+            case Types::FdcStore:       path = QFileDialog::getOpenFileName(this, tr("Select FDC store for replacement"), currentDir, tr("FDC store files (*.fdc *.bin);;All files (*)"));        break;
+            case Types::FsysStore:      path = QFileDialog::getOpenFileName(this, tr("Select Fsys store for replacement"), currentDir, tr("Fsys store files (*.fsys *.bin);;All files (*)"));      break;
+            case Types::EvsaStore:      path = QFileDialog::getOpenFileName(this, tr("Select EVSA store for replacement"), currentDir, tr("EVSA store files (*.evsa *.bin);;All files (*)"));      break;
+            default:                    path = QFileDialog::getOpenFileName(this, tr("Select binary for replacement"),  currentDir, tr("Binary files (*.bin);;All files (*)"));             break;
+        }
+
+        size = model->header(index).size() + model->body(index).size() + model->tail(index).size();
+    }
+
+    if (path.trimmed().isEmpty())
+        return;
+
+    QFile inputFile;
+    inputFile.setFileName(path);
+    if (!inputFile.open(QFile::ReadOnly))
+    {
+        QMessageBox::critical(this, tr("Replacement failed"), tr("Can't open input file for reading!"), QMessageBox::Ok);
+        return;
+    }
+
+    QByteArray buffer = inputFile.readAll();
+    inputFile.close();
+
+    if (buffer.size() != size)
+    {
+        QMessageBox::critical(this, tr("Replacement failed"), tr("Size of binary file and selection do not match!"), QMessageBox::Ok);
+        return;
+    }
+
+    // Load current image file r/w
+    QFile openFile;
+    openFile.setFileName(currentPath);
+    if (!openFile.open(QFile::ReadWrite))
+    {
+        QMessageBox::critical(this, tr("Replacement failed"), tr("Can't open image file for writing!"), QMessageBox::Ok);
+        return;
+    }
+
+    QByteArray openFileBuffer = openFile.readAll();
+
+    // If no backup file exists, create one
+    QFile backupFile;
+    backupFile.setFileName(currentPath + ".bak");
+
+    if (!backupFile.exists())
+    {
+        if (!backupFile.open(QFile::QFile::WriteOnly))
+        {
+            QMessageBox::critical(this, tr("Replacement failed"), tr("Can't create backup file!"), QMessageBox::Ok);
+            return;
+        }
+        else
+        {
+            backupFile.resize(0);
+            backupFile.write(openFileBuffer);
+            backupFile.close();
+        }
+    }
+
+    // Naive replacement operation
+    openFileBuffer.replace(base, size, buffer);
+
+    // Write file to disk
+    openFile.resize(0);
+    openFile.write(openFileBuffer);
+    openFile.close();
+
+    // Open modified file
+    openImageFile(currentPath);
 }
 
 void UEFITool::extractAsIs()

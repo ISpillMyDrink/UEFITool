@@ -63,6 +63,9 @@ BOOLEAN makePattern(const CHAR8 *textPattern, std::vector<UINT8> &pattern, std::
 INTN findPattern(const UINT8 *pattern, const UINT8 *patternMask, UINTN patternSize,
     const UINT8 *data, UINTN dataSize, UINTN dataOff);
 
+// Find pattern with Boyer-Moore-Horspool algorithm
+UINT8* findPattern(UINT8* begin, UINT8* end, const UINT8* pattern, UINTN plen);
+
 // Safely dereferences misaligned pointers
 template <typename T>
 inline T readUnaligned(const T *v) {

@@ -141,6 +141,12 @@ USTATUS FfsParser::performFirstPass(const UByteArray & buffer, UModelIndex & ind
 
     USTATUS result;
 
+    // Try parsing as Insyde Image
+    result = parseInsyde(buffer, 0, UModelIndex(), index);
+    if (result != U_ITEM_NOT_FOUND) {
+        return result;
+    }
+
     // Try parsing as UEFI Capsule
     result = parseCapsule(buffer, 0, UModelIndex(), index);;
     if (result != U_ITEM_NOT_FOUND) {
@@ -169,6 +175,67 @@ USTATUS FfsParser::parseGenericImage(const UByteArray & buffer, const UINT32 loc
     // Parse the image as raw area
     bgProtectedRegionsBase = imageBase = model->base(parent) + localOffset;
     return parseRawArea(index);
+}
+
+USTATUS FfsParser::parseInsyde(const UByteArray & capsule, const UINT32 localOffset, const UModelIndex & parent, UModelIndex & index)
+{
+    // Check buffer size to be more than or equal to size of IFLASH_BIOSIMG_HEADER
+    if ((UINT32)capsule.size() < sizeof(IFLASH_BIOSIMG_HEADER))
+        return U_ITEM_NOT_FOUND;
+
+    // Find image header in capsule
+    UINT8* dataPtr = (UINT8*)capsule.data();
+    UINT8* imageHeaderPtr = findPattern(dataPtr, dataPtr + capsule.size() - 1, IFLASH_BIOSIMG_SIGNATURE, IFLASH_BIOSIMG_SIGNATURE_LENGTH);
+
+    if (!imageHeaderPtr)
+        return U_ITEM_NOT_FOUND;
+
+    UINT32 imageHeaderOffset = (imageHeaderPtr - dataPtr) * sizeof(UINT8);
+    UINT32 imageBodyOffset = imageHeaderOffset + sizeof(IFLASH_BIOSIMG_HEADER);
+
+    // Parse image header
+    IFLASH_BIOSIMG_HEADER* imageHeader = (IFLASH_BIOSIMG_HEADER*) imageHeaderPtr;
+
+    // Check sanity of header values
+    if (imageBodyOffset + imageHeader->FullSize > (UINT32)capsule.size())
+    {
+        msg(usprintf("%s: Data end offset %Xh is located outside of the opened image", __FUNCTION__,
+                         imageBodyOffset + imageHeader->UsedSize));
+        return U_INVALID_CAPSULE;
+    }
+
+    if (imageHeader->FullSize < imageHeader->UsedSize)
+    {
+        msg(usprintf("%s: Used size %Xh (%u) is larger than full size %Xh (%u)", __FUNCTION__,
+                         imageHeader->UsedSize,
+                         imageHeader->UsedSize,
+                         imageHeader->FullSize,
+                         imageHeader->FullSize));
+        return U_INVALID_CAPSULE;
+    }
+
+    UByteArray header = capsule.mid(imageBodyOffset);
+    UByteArray image = capsule.mid(imageBodyOffset, imageHeader->UsedSize);
+    UByteArray tail = capsule.right(imageBodyOffset + imageHeader->UsedSize);
+    UString name("InsydeFlasher Capsule");
+    UString info = usprintf("Full size: %" PRIXQ "h (%" PRIuQ ")\nImage header offset: %Xh\nFull image size: %Xh (%u)\nUsed image size: %Xh (%u)",
+                 capsule.size(), capsule.size(),
+                 imageHeaderOffset,
+                 imageHeader->FullSize, imageHeader->FullSize,
+                 imageHeader->UsedSize, imageHeader->UsedSize);
+
+    index = model->addItem(localOffset, Types::Capsule, Subtypes::InsydeCapsule, name, UString(), info, header, image, tail, Fixed, parent);
+
+    UModelIndex imageIndex;
+
+    // Try parsing as Intel image
+    USTATUS result = parseIntelImage(image, imageBodyOffset, index, imageIndex);
+    if (result != U_ITEM_NOT_FOUND) {
+        return result;
+    }
+
+    // Parse as generic image
+    return parseGenericImage(image, imageBodyOffset, index, imageIndex);
 }
 
 USTATUS FfsParser::parseCapsule(const UByteArray & capsule, const UINT32 localOffset, const UModelIndex & parent, UModelIndex & index)
@@ -459,7 +526,8 @@ USTATUS FfsParser::parseIntelImage(const UByteArray & intelImage, const UINT32 l
             msg(usprintf("%s: ", __FUNCTION__) + itemSubtypeToUString(Types::Region, regions[i].type)
                 + UString(" region has intersection with ") + itemSubtypeToUString(Types::Region, regions[i - 1].type) +UString(" region"),
                 index);
-            return U_INVALID_FLASH_DESCRIPTOR;
+            // Continue parsing the Descriptor even when sections intersect but throw a warning.
+            // return U_INVALID_FLASH_DESCRIPTOR;
         }
         // Check for padding between current and previous regions
         else if (regions[i].offset > previousRegionEnd) {

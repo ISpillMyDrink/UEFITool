@@ -485,6 +485,39 @@ INTN findPattern(const UINT8 *pattern, const UINT8 *patternMask, UINTN patternSi
     return -1;
 }
 
+UINT8* findPattern(UINT8* begin, UINT8* end, const UINT8* pattern, UINTN plen)
+{
+    UINTN scan = 0;
+    UINTN bad_char_skip[256];
+    UINTN last;
+    UINTN slen;
+
+    if (plen == 0 || !begin || !pattern || !end || end <= begin)
+        return NULL;
+
+    slen = end - begin;
+
+    for (scan = 0; scan <= 255; scan++)
+        bad_char_skip[scan] = plen;
+
+    last = plen - 1;
+
+    for (scan = 0; scan < last; scan++)
+        bad_char_skip[pattern[scan]] = last - scan;
+
+    while (slen >= plen)
+    {
+        for (scan = last; begin[scan] == pattern[scan]; scan--)
+            if (scan == 0)
+                return begin;
+
+        slen -= bad_char_skip[begin[last]];
+        begin += bad_char_skip[begin[last]];
+    }
+
+    return NULL;
+}
+
 BOOLEAN makePattern(const CHAR8 *textPattern, std::vector<UINT8> &pattern, std::vector<UINT8> &patternMask)
 {
     UINTN len = std::strlen(textPattern);
