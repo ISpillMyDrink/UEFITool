@@ -85,7 +85,8 @@ namespace Subtypes {
         AptioSignedCapsule = 100,
         AptioUnsignedCapsule,
         UefiCapsule,
-        ToshibaCapsule
+        ToshibaCapsule,
+        InsydeCapsule
     };
 
     enum VolumeSubtypes {
