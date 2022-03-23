@@ -109,6 +109,7 @@ UString itemSubtypeToUString(const UINT8 type, const UINT8 subtype)
         if (subtype == Subtypes::AptioUnsignedCapsule)     return UString("Aptio unsigned");
         if (subtype == Subtypes::UefiCapsule)              return UString("UEFI 2.0");
         if (subtype == Subtypes::ToshibaCapsule)           return UString("Toshiba");
+        if (subtype == Subtypes::InsydeCapsule)            return UString("InsydeFlasher");
         break;
     case Types::Region:                                    return regionTypeToUString(subtype);
     case Types::File:                                      return fileTypeToUString(subtype);
