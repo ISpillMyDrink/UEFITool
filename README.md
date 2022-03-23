@@ -1,3 +1,11 @@
+## How Does This Fork Differ
+
+This fork is mostly concentrated on restoring some simple editing functionality to make UEFITool (in the new engine version) more useful for the purposes of extracting manufacturer firmware updates and stitching them together with backups taken from a machine.
+
+Functionality or Changes and so far include:
+- Detection of InsydeFlasher images (see https://github.com/LongSoft/InsydeImageExtractor/)
+- Implementation of a "naive" editing function, capable of replacing non-compressed, non-encapsulated, and non-checksummed sections of an image with replacements of the same size
+
 # UEFITool
 
 UEFITool is a viewer and editor of firmware images conforming to UEFI Platform Interface (PI) Specifications.
