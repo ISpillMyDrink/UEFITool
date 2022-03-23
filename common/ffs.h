@@ -93,14 +93,15 @@ const UByteArray APTIO_SIGNED_CAPSULE_GUID
 const UByteArray APTIO_UNSIGNED_CAPSULE_GUID
 ("\x90\xBB\xEE\x14\x0A\x89\xDB\x43\xAE\xD1\x5D\x3C\x45\x88\xA4\x18", 16);
 
-// InsydeFlasher Image Signature
+// InsydeFlasher image signature ($_IFLASH_BIOSIMG)
 const UINT8 IFLASH_BIOSIMG_SIGNATURE[] = { 
     0x24, 0x5F, 0x49, 0x46, 0x4C, 0x41, 0x53, 0x48, 0x5F, 0x42, 0x49, 0x4F,
     0x53, 0x49, 0x4D, 0x47
-}; // "$_IFLASH_BIOSIMG"
+};
 
 #define IFLASH_BIOSIMG_SIGNATURE_LENGTH 16 
 
+// InsydeFlasher image header
 typedef struct _IFLASH_BIOSIMG_HEADER {
     UINT8  Signature[IFLASH_BIOSIMG_SIGNATURE_LENGTH];
     UINT32 FullSize;

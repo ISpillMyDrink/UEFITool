@@ -391,6 +391,7 @@
      <addaction name="actionHexView"/>
      <addaction name="separator"/>
      <addaction name="actionExtract"/>
+     <addaction name="actionReplace" />
     </widget>
     <widget class="QMenu" name="menuVolumeActions">
      <property name="enabled">
