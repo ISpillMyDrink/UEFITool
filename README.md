@@ -1,10 +1,14 @@
 ## How Does This Fork Differ
 
-This fork is mostly concentrated on restoring some simple editing functionality to make UEFITool (in the new engine version) more useful for the purposes of extracting manufacturer firmware updates and stitching them together with backups taken from a machine.
+This fork is mostly concentrated on restoring some simple editing functionality to make UEFITool (in the new engine version) more useful for the purposes of extracting manufacturer firmware updates and stitching them together with backups taken from a machine. It is not intended as a general drop-in replacement for UEFITool!
 
-Functionality or Changes and so far include:
+Functionality or Changes so far include:
 - Detection of InsydeFlasher images (see https://github.com/LongSoft/InsydeImageExtractor/)
-- Implementation of a "naive" editing function, capable of replacing non-compressed, non-encapsulated, and non-checksummed sections of an image with replacements of the same size
+- Implementation of a "naive" editing function, capable of replacing non-compressed, non-encapsulated, and non-checksummed sections of an image with replacements of the same size. This is not the same as the editing functionality of the Old Engine branch!
+
+Planned functionality includes:
+- Detection of split Intel images and automatic combination for analysis
+- Function to compare multiple images (to search for DMI information or similar)
 
 # UEFITool
 
