@@ -201,7 +201,7 @@ USTATUS FfsParser::parseInsyde(const UByteArray & capsule, const UINT32 localOff
     UByteArray image = capsule.mid(imageBodyOffset, imageHeader->UsedSize);
     UByteArray tail = capsule.right(imageBodyOffset + imageHeader->UsedSize);
     UString name("InsydeFlasher Capsule");
-    UString info = usprintf("Full size: %" PRIXQ "h (%" PRIuQ ")\nImage header offset: %Xh\nFull image size: %Xh (%u)\nUsed image size: %Xh (%u)",
+    UString info = usprintf("Full size: %Xh (%uh)\nImage header offset: %Xh\nFull image size: %Xh (%u)\nUsed image size: %Xh (%u)",
                  capsule.size(), capsule.size(),
                  imageHeaderOffset,
                  imageHeader->FullSize, imageHeader->FullSize,
