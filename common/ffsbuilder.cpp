@@ -1,15 +1,15 @@
 /* fssbuilder.cpp
-
-Copyright (c) 2015, Nikolaj Schlej. All rights reserved.
-This program and the accompanying materials
-are licensed and made available under the terms and conditions of the BSD License
-which accompanies this distribution.  The full text of the license may be found at
-http://opensource.org/licenses/bsd-license.php
-
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
-
-*/
+ 
+ Copyright (c) 2015, Nikolaj Schlej. All rights reserved.
+ This program and the accompanying materials
+ are licensed and made available under the terms and conditions of the BSD License
+ which accompanies this distribution.  The full text of the license may be found at
+ http://opensource.org/licenses/bsd-license.php
+ 
+ THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
+ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+ 
+ */
 #include "ffsbuilder.h"
 
 #include "descriptor.h"
@@ -25,7 +25,7 @@ USTATUS FfsBuilder::erase(const UModelIndex & index, UByteArray & erased)
     // Sanity check
     if (!index.isValid())
         return U_INVALID_PARAMETER;
-
+    
     // Try to get emptyByte value from item's parsing data
     UINT8 emptyByte = 0xFF;
     if (!model->hasEmptyParsingData(index)) {
@@ -38,9 +38,9 @@ USTATUS FfsBuilder::erase(const UModelIndex & index, UByteArray & erased)
             emptyByte = pdata.emptyByte;
         }
     }
-
+    
     erased = UByteArray(model->header(index).size() + model->body(index).size() + model->tail(index).size(), emptyByte);
-
+    
     return U_SUCCESS;
 }
 
@@ -49,7 +49,7 @@ USTATUS FfsBuilder::build(const UModelIndex & root, UByteArray & image)
     // Sanity check
     if (!root.isValid())
         return U_INVALID_PARAMETER;
-
+    
     if (model->type(root) == Types::Capsule) {
         return buildCapsule(root, image);
     }
@@ -61,7 +61,7 @@ USTATUS FfsBuilder::build(const UModelIndex & root, UByteArray & image)
             return buildRawArea(root, image);
         }
     }
-
+    
     return U_NOT_IMPLEMENTED;
 }
 
@@ -70,34 +70,29 @@ USTATUS FfsBuilder::buildCapsule(const UModelIndex & index, UByteArray & capsule
     // Sanity check
     if (!index.isValid())
         return U_INVALID_PARAMETER;
-
+    
     // No action
     if (model->action(index) == Actions::NoAction) {
         // Use original item data
         capsule = model->header(index) + model->body(index) + model->tail(index);
         return U_SUCCESS;
     }
-
+    
     // Rebuild or Replace
     else if (model->action(index) == Actions::Rebuild
-        || model->action(index) == Actions::Replace) {
+             || model->action(index) == Actions::Replace) {
         if (model->rowCount(index)) {
             // Clear the supplied UByteArray
             capsule.clear();
-
+            
             // Right now there is only one capsule image element supported
             if (model->rowCount(index) != 1) {
                 msg(usprintf("buildCapsule: building of capsules with %d items is not yet supported", model->rowCount(index)), index);
                 return U_NOT_IMPLEMENTED;
             }
-
+            
             // Build image
-#if ((QT_VERSION_MAJOR == 5) && (QT_VERSION_MINOR < 6)) || (QT_VERSION_MAJOR < 5)
-            UModelIndex imageIndex = index.child(0, 0);
-#else
             UModelIndex imageIndex = index.model()->index(0, 0, index);
-#endif
-
             UByteArray imageData;
             
             // Check image type
@@ -141,12 +136,12 @@ USTATUS FfsBuilder::buildCapsule(const UModelIndex & index, UByteArray & capsule
         }
         else
             capsule = model->body(index);
-
+        
         // Build successful, append header and tail
         capsule = model->header(index) + capsule + model->tail(index);
         return U_SUCCESS;
     }
-
+    
     msg(UString("buildCapsule: unexpected action " + actionTypeToUString(model->action(index))), index);
     return U_NOT_IMPLEMENTED;
 }
@@ -170,24 +165,16 @@ USTATUS FfsBuilder::buildIntelImage(const UModelIndex & index, UByteArray & inte
     // Rebuild
     else if (model->action(index) == Actions::Rebuild) {
         // First child will always be descriptor for this type of image, and it's read only for now
-#if ((QT_VERSION_MAJOR == 5) && (QT_VERSION_MINOR < 6)) || (QT_VERSION_MAJOR < 5)
-        intelImage = model->header(index.child(0, 0)) + model->body(index.child(0, 0)) + model->tail(index.child(0, 0));
-#else
         intelImage = model->header(index.model()->index(0, 0, index)) + model->body(index.model()->index(0, 0, index)) + model->tail(index.model()->index(0, 0, index));
-#endif
-
+        
         // Process other regions
         for (int i = 1; i < model->rowCount(index); i++) {
-#if ((QT_VERSION_MAJOR == 5) && (QT_VERSION_MINOR < 6)) || (QT_VERSION_MAJOR < 5)
-            UModelIndex currentRegion = index.child(i, 0);
-#else
             UModelIndex currentRegion = index.model()->index(i, 0, index);
-#endif
-
+            
             // Skip regions with Remove action
             if (model->action(currentRegion) == Actions::Remove)
                 continue;
-
+            
             // Check item type to be either region or padding
             UINT8 type = model->type(currentRegion);
             if (type == Types::Padding) {
@@ -195,41 +182,41 @@ USTATUS FfsBuilder::buildIntelImage(const UModelIndex & index, UByteArray & inte
                 intelImage += model->header(currentRegion) + model->body(currentRegion) + model->tail(currentRegion);
                 continue;
             }
-
+            
             // Check region subtype
             USTATUS result;
             UByteArray region;
             UINT8 regionType = model->subtype(currentRegion);
             switch (regionType) {
-            case Subtypes::BiosRegion:
-            case Subtypes::PdrRegion:
-                result = buildRawArea(currentRegion, region);
-                if (result) {
-                    msg(UString("buildIntelImage: building of region ") + regionTypeToUString(regionType) + UString(" failed with error ") + errorCodeToUString(result), currentRegion);
-                    return result;
-                }
-                break;
-            case Subtypes::MeRegion:
-            case Subtypes::GbeRegion:
-            case Subtypes::DevExp1Region:
-            case Subtypes::Bios2Region:
-            case Subtypes::MicrocodeRegion:
-            case Subtypes::EcRegion:
-            case Subtypes::DevExp2Region:
-            case Subtypes::IeRegion:
-            case Subtypes::Tgbe1Region:
-            case Subtypes::Tgbe2Region:
-            case Subtypes::Reserved1Region:
-            case Subtypes::Reserved2Region:
-            case Subtypes::PttRegion:
-                // Add region as is
-                region = model->header(currentRegion) + model->body(currentRegion);
-                break;
-            default:
-                msg(UString("buildIntelImage: unknown region type"), currentRegion);
-                return U_UNKNOWN_ITEM_TYPE;
+                case Subtypes::BiosRegion:
+                case Subtypes::PdrRegion:
+                    result = buildRawArea(currentRegion, region);
+                    if (result) {
+                        msg(UString("buildIntelImage: building of region ") + regionTypeToUString(regionType) + UString(" failed with error ") + errorCodeToUString(result), currentRegion);
+                        return result;
+                    }
+                    break;
+                case Subtypes::MeRegion:
+                case Subtypes::GbeRegion:
+                case Subtypes::DevExp1Region:
+                case Subtypes::Bios2Region:
+                case Subtypes::MicrocodeRegion:
+                case Subtypes::EcRegion:
+                case Subtypes::DevExp2Region:
+                case Subtypes::IeRegion:
+                case Subtypes::Tgbe1Region:
+                case Subtypes::Tgbe2Region:
+                case Subtypes::Reserved1Region:
+                case Subtypes::Reserved2Region:
+                case Subtypes::PttRegion:
+                    // Add region as is
+                    region = model->header(currentRegion) + model->body(currentRegion);
+                    break;
+                default:
+                    msg(UString("buildIntelImage: unknown region type"), currentRegion);
+                    return U_UNKNOWN_ITEM_TYPE;
             }
-
+            
             // Append the resulting region
             intelImage += region;
         }
@@ -245,12 +232,12 @@ USTATUS FfsBuilder::buildIntelImage(const UModelIndex & index, UByteArray & inte
             msg(usprintf("buildIntelImage: new image size %Xh (%u) is smaller than the original %Xh (%u)", newSize, newSize, oldSize, oldSize), index);
             return U_INVALID_IMAGE;
         }
-
+        
         // Build successful, append header and tail
         intelImage = model->header(index) + intelImage + model->tail(index);
         return U_SUCCESS;
     }
-
+    
     msg(UString("buildIntelImage: unexpected action " + actionTypeToUString(model->action(index))), index);
     return U_NOT_IMPLEMENTED;
 }
@@ -260,7 +247,7 @@ USTATUS FfsBuilder::buildRawArea(const UModelIndex & index, UByteArray & rawArea
     // Sanity check
     if (!index.isValid())
         return U_INVALID_PARAMETER;
-
+    
     // No action required
     if (model->action(index) == Actions::NoAction) {
         rawArea = model->header(index) + model->body(index) + model->tail(index);
@@ -273,23 +260,18 @@ USTATUS FfsBuilder::buildRawArea(const UModelIndex & index, UByteArray & rawArea
     }
     // Rebuild or Replace
     else if (model->action(index) == Actions::Rebuild
-        || model->action(index) == Actions::Replace) {
+             || model->action(index) == Actions::Replace) {
         // Rebuild if there is at least 1 child
         if (model->rowCount(index)) {
             // Clear the supplied UByteArray
             rawArea.clear();
-
+            
             // Build children
             for (int i = 0; i < model->rowCount(index); i++) {
                 USTATUS result = U_SUCCESS;
-
-#if ((QT_VERSION_MAJOR == 5) && (QT_VERSION_MINOR < 6)) || (QT_VERSION_MAJOR < 5)
-                UModelIndex currentChild = index.child(i, 0);
-#else
                 UModelIndex currentChild = index.model()->index(i, 0, index);
-#endif
-
                 UByteArray currentData;
+                
                 // Check child type
                 if (model->type(currentChild) == Types::Volume) {
                     result = buildVolume(currentChild, currentData);
@@ -309,7 +291,7 @@ USTATUS FfsBuilder::buildRawArea(const UModelIndex & index, UByteArray & rawArea
                 // Append current data
                 rawArea += currentData;
             }
-
+            
             // Check size of new raw area, it must be same as original one
             UINT32 newSize = (UINT32)rawArea.size();
             UINT32 oldSize = (UINT32)model->body(index).size();
@@ -326,12 +308,12 @@ USTATUS FfsBuilder::buildRawArea(const UModelIndex & index, UByteArray & rawArea
         else {
             rawArea = model->body(index);
         }
-
+        
         // Build successful, add header if needed
         rawArea = model->header(index) + rawArea + model->tail(index);
         return U_SUCCESS;
     }
-
+    
     msg(UString("buildRawArea: unexpected action " + actionTypeToUString(model->action(index))), index);
     return U_NOT_IMPLEMENTED;
 }
@@ -341,7 +323,7 @@ USTATUS FfsBuilder::buildPadding(const UModelIndex & index, UByteArray & padding
     // Sanity check
     if (!index.isValid())
         return U_INVALID_PARAMETER;
-
+    
     // No action required
     if (model->action(index) == Actions::NoAction) {
         padding = model->header(index) + model->body(index) + model->tail(index);
@@ -356,7 +338,7 @@ USTATUS FfsBuilder::buildPadding(const UModelIndex & index, UByteArray & padding
     else if (model->action(index) == Actions::Erase) {
         return erase(index, padding);
     }
-
+    
     msg(UString("buildPadding: unexpected action " + actionTypeToUString(model->action(index))), index);
     return U_NOT_IMPLEMENTED;
 }
@@ -366,7 +348,7 @@ USTATUS FfsBuilder::buildNonUefiData(const UModelIndex & index, UByteArray & dat
     // Sanity check
     if (!index.isValid())
         return U_INVALID_PARAMETER;
-
+    
     // No action required
     if (model->action(index) == Actions::NoAction) {
         data = model->header(index) + model->body(index) + model->tail(index);
@@ -381,9 +363,9 @@ USTATUS FfsBuilder::buildNonUefiData(const UModelIndex & index, UByteArray & dat
     else if (model->action(index) == Actions::Erase) {
         return erase(index, data);
     }
-
+    
     // TODO: rebuild properly
-
+    
     msg(UString("buildNoUefiData: unexpected action " + actionTypeToUString(model->action(index))), index);
     return U_NOT_IMPLEMENTED;
 }
@@ -393,7 +375,7 @@ USTATUS FfsBuilder::buildFreeSpace(const UModelIndex & index, UByteArray & freeS
     // Sanity check
     if (!index.isValid())
         return U_INVALID_PARAMETER;
-
+    
     // No actions possible for free space
     freeSpace = model->header(index) + model->body(index) + model->tail(index);
     return U_SUCCESS;
@@ -403,7 +385,7 @@ USTATUS FfsBuilder::buildVolume(const UModelIndex & index, UByteArray & volume)
 {
     U_UNUSED_PARAMETER(index);
     U_UNUSED_PARAMETER(volume);
-
+    
     return U_NOT_IMPLEMENTED;
 }
 
@@ -411,7 +393,7 @@ USTATUS FfsBuilder::buildPadFile(const UModelIndex & index, UByteArray & padFile
 {
     U_UNUSED_PARAMETER(index);
     U_UNUSED_PARAMETER(padFile);
-
+    
     return U_NOT_IMPLEMENTED;
 }
 
@@ -419,7 +401,7 @@ USTATUS FfsBuilder::buildFile(const UModelIndex & index, UByteArray & file)
 {
     U_UNUSED_PARAMETER(index);
     U_UNUSED_PARAMETER(file);
-
+    
     return U_NOT_IMPLEMENTED;
 }
 
@@ -427,7 +409,7 @@ USTATUS FfsBuilder::buildSection(const UModelIndex & index, UByteArray & section
 {
     U_UNUSED_PARAMETER(index);
     U_UNUSED_PARAMETER(section);
-
+    
     return U_NOT_IMPLEMENTED;
 }
 

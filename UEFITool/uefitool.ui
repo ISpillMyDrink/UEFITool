@@ -351,6 +351,7 @@
      </property>
      <addaction name="actionHexView"/>
      <addaction name="actionBodyHexView"/>
+     <addaction name="actionUncompressedHexView"/>
      <addaction name="separator"/>
      <addaction name="actionExtract"/>
      <addaction name="actionExtractBody"/>
@@ -402,6 +403,7 @@
      </property>
      <addaction name="actionHexView"/>
      <addaction name="actionBodyHexView"/>
+     <addaction name="actionUncompressedHexView"/>
      <addaction name="separator"/>
      <addaction name="actionExtract"/>
      <addaction name="actionExtractBody"/>
@@ -422,6 +424,7 @@
      </property>
      <addaction name="actionHexView"/>
      <addaction name="actionBodyHexView"/>
+     <addaction name="actionUncompressedHexView"/>
      <addaction name="separator"/>
      <addaction name="actionExtract"/>
      <addaction name="actionExtractBody"/>
@@ -446,6 +449,7 @@
      </property>
      <addaction name="actionHexView"/>
      <addaction name="actionBodyHexView"/>
+     <addaction name="actionUncompressedHexView"/>
      <addaction name="separator"/>
      <addaction name="actionExtract"/>
      <addaction name="actionExtractBody"/>
@@ -483,6 +487,7 @@
      </property>
      <addaction name="actionHexView"/>
      <addaction name="actionBodyHexView"/>
+     <addaction name="actionUncompressedHexView"/>
      <addaction name="separator"/>
      <addaction name="actionGoToData"/>
      <addaction name="separator"/>
@@ -508,6 +513,7 @@
      </property>
      <addaction name="actionHexView"/>
      <addaction name="actionBodyHexView"/>
+     <addaction name="actionUncompressedHexView"/>
      <addaction name="separator"/>
      <addaction name="actionExtract"/>
      <addaction name="actionExtractBody"/>
@@ -844,6 +850,17 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+Shift+D</string>
+   </property>
+  </action>
+  <action name="actionUncompressedHexView">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Un&amp;compressed hex view...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Alt+D</string>
    </property>
   </action>
   <action name="actionLoadGuidDatabase">

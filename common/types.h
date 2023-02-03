@@ -27,7 +27,7 @@ namespace Actions
         Replace,
         Remove,
         Rebuild,
-        Rebase
+        Rebase,
     };
 }
 
@@ -58,7 +58,6 @@ namespace Types {
         FlashMapEntry,
         Microcode,
         SlicData,
-        // ME-specific
         IfwiHeader,
         IfwiPartition,
         FptStore,
@@ -71,14 +70,15 @@ namespace Types {
         CpdEntry,
         CpdPartition,
         CpdExtension,
-        CpdSpiEntry
+        CpdSpiEntry,
+        StartupApDataEntry,
     };
 }
 
 namespace Subtypes {
     enum ImageSubtypes{
         IntelImage = 90,
-        UefiImage
+        UefiImage,
     };
 
     enum CapsuleSubtypes {
@@ -94,7 +94,7 @@ namespace Subtypes {
         Ffs2Volume,
         Ffs3Volume,
         NvramVolume,
-        MicrocodeVolume
+        MicrocodeVolume,
     };
 
     enum RegionSubtypes {
@@ -113,13 +113,13 @@ namespace Subtypes {
         Tgbe2Region,
         Reserved1Region,
         Reserved2Region,
-        PttRegion
+        PttRegion,
     };
 
     enum PaddingSubtypes {
         ZeroPadding = 120,
         OnePadding,
-        DataPadding
+        DataPadding,
     };
 
     enum NvarEntrySubtypes {
@@ -127,7 +127,7 @@ namespace Subtypes {
         InvalidLinkNvarEntry,
         LinkNvarEntry,
         DataNvarEntry,
-        FullNvarEntry
+        FullNvarEntry,
     };
 
     enum VssEntrySubtypes {
@@ -135,12 +135,12 @@ namespace Subtypes {
         StandardVssEntry,
         AppleVssEntry,
         AuthVssEntry,
-        IntelVssEntry
+        IntelVssEntry,
     };
 
     enum FsysEntrySubtypes {
         InvalidFsysEntry = 150,
-        NormalFsysEntry
+        NormalFsysEntry,
     };
     
     enum EvsaEntrySubtypes {
@@ -153,41 +153,45 @@ namespace Subtypes {
 
     enum FlashMapEntrySubtypes {
         VolumeFlashMapEntry = 170,
-        DataFlashMapEntry
+        DataFlashMapEntry,
     };
 
     enum MicrocodeSubtypes {
         IntelMicrocode = 180,
-        AmdMicrocode
+        AmdMicrocode,
     };
 
     enum SlicDataSubtypes {
         PubkeySlicData = 190,
-        MarkerSlicData
+        MarkerSlicData,
     };
 
     // ME-specific
     enum IfwiPartitionSubtypes {
         DataIfwiPartition = 200,
-        BootIfwiPartition
+        BootIfwiPartition,
     };
 
     enum FptEntrySubtypes {
         ValidFptEntry = 210,
-        InvalidFptEntry
+        InvalidFptEntry,
     };
 
     enum FptPartitionSubtypes {
         CodeFptPartition = 220,
         DataFptPartition,
-        GlutFptPartition
+        GlutFptPartition,
     };
 
     enum CpdPartitionSubtypes {
         ManifestCpdPartition = 230,
         MetadataCpdPartition,
         KeyCpdPartition,
-        CodeCpdPartition
+        CodeCpdPartition,
+    };
+
+    enum StartupApDataEntrySubtypes {
+        x86128kStartupApDataEntry = 240,
     };
 }
 
@@ -198,5 +202,6 @@ extern UString itemSubtypeToUString(const UINT8 type, const UINT8 subtype);
 extern UString compressionTypeToUString(const UINT8 algorithm);
 extern UString regionTypeToUString(const UINT8 type);
 extern UString fitEntryTypeToUString(const UINT8 type);
+extern UString hashTypeToUString(const UINT16 digest_agorithm_id);
 
 #endif // TYPES_H

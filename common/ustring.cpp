@@ -1,16 +1,18 @@
 /* ustring.cpp
-
-Copyright (c) 2016, Nikolaj Schlej. All rights reserved.
-This program and the accompanying materials
-are licensed and made available under the terms and conditions of the BSD License
-which accompanies this distribution.  The full text of the license may be found at
-http://opensource.org/licenses/bsd-license.php
-
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
-*/
+ 
+ Copyright (c) 2016, Nikolaj Schlej. All rights reserved.
+ This program and the accompanying materials
+ are licensed and made available under the terms and conditions of the BSD License
+ which accompanies this distribution.  The full text of the license may be found at
+ http://opensource.org/licenses/bsd-license.php
+ 
+ THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
+ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+ */
 
 #include "ustring.h"
+#include <cstddef>
+#include <cstdint>
 #include <stdarg.h>
 
 #if defined(QT_CORE_LIB)
@@ -19,13 +21,9 @@ UString usprintf(const char* fmt, ...)
     UString msg;
     va_list vl;
     va_start(vl, fmt);
-
-#if ((QT_VERSION_MAJOR == 5) && (QT_VERSION_MINOR < 6)) || (QT_VERSION_MAJOR < 5)
-    msg.vsprintf(fmt, vl);
-#else
+    
     msg = msg.vasprintf(fmt, vl);
-#endif
-
+    
     va_end(vl);
     return msg;
 };
@@ -41,16 +39,16 @@ UString urepeated(char c, int len)
 #else
 #ifdef BSTRLIB_NOVSNP
 /* This is just a hack.  If you are using a system without a vsnprintf, it is
-not recommended that bformat be used at all. */
+ not recommended that bformat be used at all. */
 #define exvsnprintf(r,b,n,f,a) {vsprintf (b,f,a); r = -1;}
 #define START_VSNBUFF (256)
 #else
 
 #if defined (__GNUC__) && !defined (__PPC__) && !defined(__WIN32__)
 /* Something is making gcc complain about this prototype not being here, so
-I've just gone ahead and put it in. */
+ I've just gone ahead and put it in. */
 extern "C" {
-    extern int vsnprintf(char *buf, size_t count, const char *format, va_list arg);
+extern int vsnprintf(char *buf, size_t count, const char *format, va_list arg);
 }
 #endif
 
@@ -68,12 +66,12 @@ UString usprintf(const char* fmt, ...)
     bstring b;
     va_list arglist;
     int r, n;
-
+    
     if (fmt == NULL) {
         msg = "<NULL>";
     }
     else {
-
+        
         if ((b = bfromcstr("")) == NULL) {
             msg = "<NULL>";
         }
@@ -84,14 +82,14 @@ UString usprintf(const char* fmt, ...)
                     b = bformat("<NULL>");
                     break;
                 }
-
+                
                 va_start(arglist, fmt);
                 exvsnprintf(r, (char *)b->data, n + 1, fmt, arglist);
                 va_end(arglist);
-
+                
                 b->data[n] = '\0';
                 b->slen = (int)(strlen)((char *)b->data);
-
+                
                 if (b->slen < n) break;
                 if (r > n) n = r; else n += n;
             }
@@ -99,7 +97,7 @@ UString usprintf(const char* fmt, ...)
             bdestroy(b);
         }
     }
-
+    
     return msg;
 }
 
@@ -108,3 +106,19 @@ UString urepeated(char c, int len)
     return UString(c, len);
 }
 #endif
+
+UString uFromUcs2(const char* str, size_t max_len) 
+{
+    // Naive implementation assuming that only ASCII LE part of UCS2 is used, str may not be aligned.
+    UString msg;
+    const char *str8 = str;
+    size_t rest = (max_len == 0) ? SIZE_MAX : max_len;
+    if (max_len == 0) {
+        while (str8[0] && rest) {
+            msg += str8[0];
+            str8 += 2;
+            rest--;
+        }
+    }
+    return msg;
+}

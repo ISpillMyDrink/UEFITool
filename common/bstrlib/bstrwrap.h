@@ -52,7 +52,7 @@
 #include <stdlib.h>
 #include "bstrlib.h"
 #include "../ubytearray.h"
-#include "../uinttypes.h"
+#include "../basetypes.h"
 
 #ifdef __cplusplus
 
@@ -365,6 +365,7 @@ struct CBString : public tagbstring {
 	// QString compatibility methods
 	const char *toLocal8Bit() const { return *this; }
 	bool contains(const char *str) { return find(str) >= 0; }
+    bool startsWith(const char *str) { return find(str) == 0; }
 	bool endsWith(const char *str) { int len = strlen(str); return (slen >= len && (find(str, slen - len) == (slen - len))); }
 	bool isEmpty() const { return slen == 0; }
 	void clear() { *this = ""; }
@@ -372,16 +373,6 @@ struct CBString : public tagbstring {
 	CBString mid(int pos, int len) const { return midstr(pos, len); }
 	CBString chopped(int len) const { return midstr(slen - len, len); }
 	void chop(int len) { trunc(((slen > len) ? slen - len : 0)); }
-	static CBString fromUtf16(const unsigned short* str) {
-		// Naive implementation assuming that only ASCII LE part of UCS2 is used, str may not be aligned.
-		CBString msg;
-		const char *str8 = reinterpret_cast<const char *>(str);
-		while (str8[0]) {
-			msg += str8[0];
-			str8 += 2;
-		}
-		return msg;
-	}
 	CBString leftJustified(int length) { if (length > slen) { return *this + CBString(' ', length - slen); } return *this; }
 };
 extern const CBString operator + (const char *a, const CBString& b);

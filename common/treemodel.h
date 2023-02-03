@@ -117,7 +117,7 @@ public:
     UString headerData(int section, int orientation, int role = 0) const;
 
     TreeModel() : markingEnabledFlag(false) {
-        rootItem = new TreeItem(0, Types::Root, 0, UString(), UString(), UString(), UByteArray(), UByteArray(), UByteArray(), TRUE, FALSE);
+        rootItem = new TreeItem(0, Types::Root, 0, UString(), UString(), UString(), UByteArray(), UByteArray(), UByteArray(), true, false);
     }
 
     bool hasIndex(int row, int column, const UModelIndex &parent = UModelIndex()) const {
@@ -162,14 +162,18 @@ public:
 
     UString info(const UModelIndex &index) const;
     void setInfo(const UModelIndex &index, const UString &info);
-    void addInfo(const UModelIndex &index, const UString &info, const bool append = TRUE);
+    void addInfo(const UModelIndex &index, const UString &info, const bool append = true);
 
     bool fixed(const UModelIndex &index) const;
     void setFixed(const UModelIndex &index, const bool fixed);
 
     bool compressed(const UModelIndex &index) const;
     void setCompressed(const UModelIndex &index, const bool compressed);
-
+    
+    UByteArray uncompressedData(const UModelIndex &index) const;
+    bool hasEmptyUncompressedData(const UModelIndex &index) const;
+    void setUncompressedData(const UModelIndex &index, const UByteArray &ucdata);
+    
     UINT8 marking(const UModelIndex &index) const;
     void setMarking(const UModelIndex &index, const UINT8 marking);
 

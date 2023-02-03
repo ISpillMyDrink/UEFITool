@@ -1,15 +1,15 @@
 /* ffsutils.cpp
-
-Copyright (c) 2019, LongSoft. All rights reserved.
-This program and the accompanying materials
-are licensed and made available under the terms and conditions of the BSD License
-which accompanies this distribution.  The full text of the license may be found at
-http://opensource.org/licenses/bsd-license.php
-
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
-
-*/
+ 
+ Copyright (c) 2019, LongSoft. All rights reserved.
+ This program and the accompanying materials
+ are licensed and made available under the terms and conditions of the BSD License
+ which accompanies this distribution.  The full text of the license may be found at
+ http://opensource.org/licenses/bsd-license.php
+ 
+ THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
+ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+ 
+ */
 
 #include "ffsutils.h"
 #include "utility.h"
@@ -21,15 +21,15 @@ USTATUS findFileRecursive(TreeModel *model, const UModelIndex index, const UStri
 {
     if (!index.isValid())
         return U_SUCCESS;
-
+    
     if (hexPattern.isEmpty())
         return U_INVALID_PARAMETER;
-
+    
     const char *hexPatternRaw = hexPattern.toLocal8Bit();
     std::vector<UINT8> pattern, patternMask;
     if (!makePattern(hexPatternRaw, pattern, patternMask))
         return U_INVALID_PARAMETER;
-
+    
     // Check for "all substrings" pattern
     size_t count = 0;
     for (size_t i = 0; i < patternMask.size(); i++)
@@ -37,17 +37,12 @@ USTATUS findFileRecursive(TreeModel *model, const UModelIndex index, const UStri
             count++;
     if (count == patternMask.size())
         return U_SUCCESS;
-
+    
     bool hasChildren = (model->rowCount(index) > 0);
     for (int i = 0; i < model->rowCount(index); i++) {
-#if ((QT_VERSION_MAJOR == 5) && (QT_VERSION_MINOR < 6)) || (QT_VERSION_MAJOR < 5)
-        findFileRecursive(model, index.child(i, index.column()), hexPattern, mode, files);
-#else
         findFileRecursive(model, index.model()->index(i, index.column(), index), hexPattern, mode, files);
-#endif
-
     }
-
+    
     UByteArray data;
     if (hasChildren) {
         if (mode == SEARCH_MODE_HEADER)
@@ -63,16 +58,16 @@ USTATUS findFileRecursive(TreeModel *model, const UModelIndex index, const UStri
         else
             data = model->header(index) + model->body(index);
     }
-
+    
     const UINT8 *rawData = reinterpret_cast<const UINT8 *>(data.constData());
     INTN offset = findPattern(pattern.data(), patternMask.data(), pattern.size(), rawData, data.size(), 0);
-
+    
     // For patterns that cross header|body boundary, skip patterns entirely located in body, since
     // children search above has already found them.
     if (hasChildren && mode == SEARCH_MODE_ALL && offset >= model->header(index).size()) {
         offset = -1;
     }
-
+    
     if (offset >= 0) {
         if (model->type(index) != Types::File) {
             UModelIndex ffs = model->findParentOfType(index, Types::File);
@@ -84,9 +79,9 @@ USTATUS findFileRecursive(TreeModel *model, const UModelIndex index, const UStri
         else {
             files.insert(std::pair<UModelIndex, UModelIndex>(index, UModelIndex()));
         }
-
+        
     }
-
+    
     return U_SUCCESS;
 }
 
