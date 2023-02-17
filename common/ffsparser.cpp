@@ -1277,6 +1277,9 @@ bool FfsParser::microcodeHeaderValid(const INTEL_MICROCODE_HEADER* ucodeHeader)
 
 USTATUS FfsParser::findNextRawAreaItem(const UModelIndex & index, const UINT32 localOffset, UINT8 & nextItemType, UINT32 & nextItemOffset, UINT32 & nextItemSize, UINT32 & nextItemAlternativeSize)
 {
+    if (!index.isValid())
+        return U_INVALID_PARAMETER;
+
     UByteArray data = model->body(index);
     UINT32 dataSize = (UINT32)data.size();
     
@@ -1292,7 +1295,7 @@ USTATUS FfsParser::findNextRawAreaItem(const UModelIndex & index, const UINT32 l
             if (restSize < sizeof(INTEL_MICROCODE_HEADER)) {
                 continue;
             }
-            
+
             // Check microcode header candidate
             const INTEL_MICROCODE_HEADER* ucodeHeader = (const INTEL_MICROCODE_HEADER*)currentPos;
             if (FALSE == microcodeHeaderValid(ucodeHeader)) {
@@ -1311,11 +1314,16 @@ USTATUS FfsParser::findNextRawAreaItem(const UModelIndex & index, const UINT32 l
             break;
         }
         else if (readUnaligned(currentPos) == EFI_FV_SIGNATURE) {
-            if (offset < EFI_FV_SIGNATURE_OFFSET)
+            if (restSize < sizeof(EFI_FIRMWARE_VOLUME_HEADER))
                 continue;
-            
-            const EFI_FIRMWARE_VOLUME_HEADER* volumeHeader = (const EFI_FIRMWARE_VOLUME_HEADER*)(data.constData() + offset - EFI_FV_SIGNATURE_OFFSET);
-            if (volumeHeader->FvLength < sizeof(EFI_FIRMWARE_VOLUME_HEADER) + 2 * sizeof(EFI_FV_BLOCK_MAP_ENTRY) || volumeHeader->FvLength >= 0xFFFFFFFFUL) {
+
+            if (offset < EFI_FV_SIGNATURE_OFFSET + sizeof(const EFI_FIRMWARE_VOLUME_HEADER))
+                continue;
+
+            UINT32 localOffset = offset - EFI_FV_SIGNATURE_OFFSET;
+            const EFI_FIRMWARE_VOLUME_HEADER* volumeHeader = (const EFI_FIRMWARE_VOLUME_HEADER*)(data.constData() + localOffset);
+            if (volumeHeader->FvLength < sizeof(EFI_FIRMWARE_VOLUME_HEADER) + 2 * sizeof(EFI_FV_BLOCK_MAP_ENTRY)
+                || volumeHeader->FvLength >= 0xFFFFFFFFUL) {
                 continue;
             }
             if (volumeHeader->Revision != 1 && volumeHeader->Revision != 2) {
@@ -1323,25 +1331,27 @@ USTATUS FfsParser::findNextRawAreaItem(const UModelIndex & index, const UINT32 l
             }
             
             // Calculate alternative volume size using its BlockMap
+            if (localOffset < sizeof(EFI_FIRMWARE_VOLUME_HEADER) + 2 * sizeof(EFI_FV_BLOCK_MAP_ENTRY))
+                continue;
+
             nextItemAlternativeSize = 0;
-            const EFI_FV_BLOCK_MAP_ENTRY* entry = (const EFI_FV_BLOCK_MAP_ENTRY*)(data.constData() + offset - EFI_FV_SIGNATURE_OFFSET + sizeof(EFI_FIRMWARE_VOLUME_HEADER));
+            const EFI_FV_BLOCK_MAP_ENTRY* entry = (const EFI_FV_BLOCK_MAP_ENTRY*)(data.constData() + localOffset + sizeof(EFI_FIRMWARE_VOLUME_HEADER));
             while (entry->NumBlocks != 0 && entry->Length != 0) {
-                // Check if we are past the end of the volume
-                if ((const void*)entry >= data.constData() + data.size()) {
+                nextItemAlternativeSize += entry->NumBlocks * entry->Length;
+                entry += 1;
+
+                // Check if we are getting past the end of the volume
+                if ((const void*)entry >= data.constData() + dataSize - sizeof(EFI_FV_BLOCK_MAP_ENTRY)) {
                     // This volume is broken, but we can't use continue here because we need to continue the outer loop
                     goto continue_searching;
                 }
-                
-                nextItemAlternativeSize += entry->NumBlocks * entry->Length;
-                entry += 1;
             }
             
             // All checks passed, volume found
             nextItemType = Types::Volume;
             nextItemSize = (UINT32)volumeHeader->FvLength;
-            nextItemOffset = offset - EFI_FV_SIGNATURE_OFFSET;
+            nextItemOffset = localOffset;
             break;
-continue_searching: {}
         }
         else if (readUnaligned(currentPos) == BPDT_GREEN_SIGNATURE
                  || readUnaligned(currentPos) == BPDT_YELLOW_SIGNATURE) {
@@ -1395,6 +1405,7 @@ continue_searching: {}
             nextItemOffset = offset;
             break;
         }
+ continue_searching: {}
     }
     
     // No more stores found
@@ -4213,7 +4224,8 @@ USTATUS FfsParser::parseBpdtRegion(const UByteArray & region, const UINT32 local
             partitions.push_back(partition);
         }
     }
-    
+        
+make_partition_table_consistent:
     // Check for empty set of partitions
     if (partitions.empty()) {
         // Add a single padding partition in this case
@@ -4223,8 +4235,7 @@ USTATUS FfsParser::parseBpdtRegion(const UByteArray & region, const UINT32 local
         padding.type = Types::Padding;
         partitions.push_back(padding);
     }
-    
-make_partition_table_consistent:
+
     // Sort partitions by offset
     std::sort(partitions.begin(), partitions.end());
     
