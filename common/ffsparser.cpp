@@ -1028,6 +1028,10 @@ USTATUS FfsParser::parseVolumeHeader(const UByteArray & volume, const UINT32 loc
         msg(usprintf("%s: volume header overlaps the end of data", __FUNCTION__));
         return U_INVALID_VOLUME;
     }
+    else if (volumeHeader->HeaderLength < sizeof(EFI_FIRMWARE_VOLUME_HEADER) + 2*sizeof(EFI_FV_BLOCK_MAP_ENTRY)) {
+        msg(usprintf("%s: volume header has invalid size", __FUNCTION__));
+        return U_INVALID_VOLUME;
+    }
     // Check sanity of ExtHeaderOffset value
     if (volumeHeader->Revision > 1 && volumeHeader->ExtHeaderOffset
         && (UINT32)ALIGN8(volumeHeader->ExtHeaderOffset + sizeof(EFI_FIRMWARE_VOLUME_EXT_HEADER)) > (UINT32)volume.size()) {
@@ -1052,6 +1056,12 @@ USTATUS FfsParser::parseVolumeHeader(const UByteArray & volume, const UINT32 loc
     // Extended header end can be unaligned
     headerSize = ALIGN8(headerSize);
     
+    // Check calculated size
+    if (headerSize >= volume.size()) {
+        msg(usprintf("%s: volume header has invalid size", __FUNCTION__));
+        return U_INVALID_VOLUME;
+    }
+
     // Check for volume structure to be known
     bool isUnknown = true;
     bool isNvramVolume = false;
@@ -1133,7 +1143,7 @@ USTATUS FfsParser::parseVolumeHeader(const UByteArray & volume, const UINT32 loc
     UINT16 calculated = calculateChecksum16((const UINT16*)tempHeader.constData(), volumeHeader->HeaderLength);
     if (volumeHeader->Checksum != calculated)
         msgInvalidChecksum = true;
-    
+
     // Get info
     UByteArray header = volume.left(headerSize);
     UByteArray body = volume.mid(headerSize);
