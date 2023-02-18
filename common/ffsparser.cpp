@@ -110,18 +110,14 @@ USTATUS FfsParser::performFirstPass(const UByteArray & buffer, UModelIndex & ind
         return U_INVALID_PARAMETER;
     }
     
-    USTATUS result;
-    
     // Try parsing as UEFI Capsule
-    result = parseCapsule(buffer, 0, UModelIndex(), index);;
-    if (result != U_ITEM_NOT_FOUND) {
-        return result;
+    if (U_SUCCESS == parseCapsule(buffer, 0, UModelIndex(), index)) {
+        return U_SUCCESS;
     }
     
     // Try parsing as Intel image
-    result = parseIntelImage(buffer, 0, UModelIndex(), index);
-    if (result != U_ITEM_NOT_FOUND) {
-        return result;
+    if (U_SUCCESS == parseIntelImage(buffer, 0, UModelIndex(), index)) {
+        return U_SUCCESS;
     }
     
     // Parse as generic image
@@ -274,9 +270,8 @@ USTATUS FfsParser::parseCapsule(const UByteArray & capsule, const UINT32 localOf
         UModelIndex imageIndex;
         
         // Try parsing as Intel image
-        USTATUS result = parseIntelImage(image, capsuleHeaderSize, index, imageIndex);
-        if (result != U_ITEM_NOT_FOUND) {
-            return result;
+        if (U_SUCCESS == parseIntelImage(image, capsuleHeaderSize, index, imageIndex)) {
+            return U_SUCCESS;
         }
         
         // Parse as generic image
@@ -291,7 +286,7 @@ USTATUS FfsParser::parseIntelImage(const UByteArray & intelImage, const UINT32 l
     // Check for buffer size to be greater or equal to descriptor region size
     if (intelImage.size() < FLASH_DESCRIPTOR_SIZE) {
         msg(usprintf("%s: input file is smaller than minimum descriptor size of %Xh (%u) bytes", __FUNCTION__, FLASH_DESCRIPTOR_SIZE, FLASH_DESCRIPTOR_SIZE));
-        return U_ITEM_NOT_FOUND;
+        return U_INVALID_FLASH_DESCRIPTOR;
     }
     
     // Store the beginning of descriptor as descriptor base address
@@ -299,7 +294,7 @@ USTATUS FfsParser::parseIntelImage(const UByteArray & intelImage, const UINT32 l
     
     // Check descriptor signature
     if (descriptor->Signature != FLASH_DESCRIPTOR_SIGNATURE) {
-        return U_ITEM_NOT_FOUND;
+        return U_INVALID_FLASH_DESCRIPTOR;
     }
     
     // Parse descriptor map
@@ -347,7 +342,7 @@ USTATUS FfsParser::parseIntelImage(const UByteArray & intelImage, const UINT32 l
                 + itemSubtypeToUString(Types::Region, me.type)
                 + UString(" region is located outside of the opened image. If your system uses dual-chip storage, please append another part to the opened image"),
                 index);
-            return U_TRUNCATED_IMAGE;
+            return U_INVALID_FLASH_DESCRIPTOR;
         }
         me.data = intelImage.mid(me.offset, me.length);
         regions.push_back(me);
@@ -376,7 +371,7 @@ USTATUS FfsParser::parseIntelImage(const UByteArray & intelImage, const UINT32 l
                 + itemSubtypeToUString(Types::Region, bios.type)
                 + UString(" region is located outside of the opened image. If your system uses dual-chip storage, please append another part to the opened image"),
                 index);
-            return U_TRUNCATED_IMAGE;
+            return U_INVALID_FLASH_DESCRIPTOR;
         }
         bios.data = intelImage.mid(bios.offset, bios.length);
         regions.push_back(bios);
@@ -404,7 +399,7 @@ USTATUS FfsParser::parseIntelImage(const UByteArray & intelImage, const UINT32 l
                         + itemSubtypeToUString(Types::Region, region.type)
                         + UString(" region is located outside of the opened image. If your system uses dual-chip storage, please append another part to the opened image"),
                         index);
-                    return U_TRUNCATED_IMAGE;
+                    return U_INVALID_FLASH_DESCRIPTOR;
                 }
                 region.data = intelImage.mid(region.offset, region.length);
                 regions.push_back(region);
@@ -1056,12 +1051,6 @@ USTATUS FfsParser::parseVolumeHeader(const UByteArray & volume, const UINT32 loc
     // Extended header end can be unaligned
     headerSize = ALIGN8(headerSize);
     
-    // Check calculated size
-    if (headerSize >= volume.size()) {
-        msg(usprintf("%s: volume header has invalid size", __FUNCTION__));
-        return U_INVALID_VOLUME;
-    }
-
     // Check for volume structure to be known
     bool isUnknown = true;
     bool isNvramVolume = false;
@@ -1126,8 +1115,8 @@ USTATUS FfsParser::parseVolumeHeader(const UByteArray & volume, const UINT32 loc
     // Check for AppleCRC32 and UsedSpace in ZeroVector
     bool hasAppleCrc32 = false;
     UINT32 volumeSize = (UINT32)volume.size();
-    UINT32 appleCrc32 = *(UINT32*)(volume.constData() + 8);
-    UINT32 usedSpace = *(UINT32*)(volume.constData() + 12);
+    UINT32 appleCrc32 = readUnaligned((UINT32*)(volume.constData() + 8));
+    UINT32 usedSpace = readUnaligned((UINT32*)(volume.constData() + 12));
     if (appleCrc32 != 0) {
         // Calculate CRC32 of the volume body
         UINT32 crc = (UINT32)crc32(0, (const UINT8*)(volume.constData() + volumeHeader->HeaderLength), volumeSize - volumeHeader->HeaderLength);
@@ -1135,7 +1124,13 @@ USTATUS FfsParser::parseVolumeHeader(const UByteArray & volume, const UINT32 loc
             hasAppleCrc32 = true;
         }
     }
-    
+
+    // Check calculated header size
+    if (headerSize >= volume.size()) {
+        msg(usprintf("%s: volume header has invalid size", __FUNCTION__));
+        return U_INVALID_VOLUME;
+    }
+
     // Check header checksum by recalculating it
     bool msgInvalidChecksum = false;
     UByteArray tempHeader((const char*)volumeHeader, volumeHeader->HeaderLength);
@@ -1169,8 +1164,8 @@ USTATUS FfsParser::parseVolumeHeader(const UByteArray & volume, const UINT32 loc
     if (volumeHeader->Revision > 1 && volumeHeader->ExtHeaderOffset) {
         const EFI_FIRMWARE_VOLUME_EXT_HEADER* extendedHeader = (const EFI_FIRMWARE_VOLUME_EXT_HEADER*)(volume.constData() + volumeHeader->ExtHeaderOffset);
         info += usprintf("\nExtended header size: %Xh (%u)\nVolume GUID: ",
-                         extendedHeader->ExtHeaderSize, extendedHeader->ExtHeaderSize) + guidToUString(extendedHeader->FvName, false);
-        name = guidToUString(extendedHeader->FvName); // Replace FFS GUID with volume GUID
+                         extendedHeader->ExtHeaderSize, extendedHeader->ExtHeaderSize) + guidToUString(readUnaligned(&extendedHeader->FvName), false);
+        name = guidToUString(readUnaligned(&extendedHeader->FvName)); // Replace FFS GUID with volume GUID
     }
     
     // Add text
@@ -1733,9 +1728,9 @@ USTATUS FfsParser::parseFileHeader(const UByteArray & file, const UINT32 localOf
     // Check for file tail presence
     UByteArray tail;
     bool msgInvalidTailValue = false;
-    if (volumeRevision == 1 && (fileHeader->Attributes & FFS_ATTRIB_TAIL_PRESENT)) {
-        //Check file tail;
-        UINT16 tailValue = *(UINT16*)body.right(sizeof(UINT16)).constData();
+    if (volumeRevision == 1 && body.size() > sizeof(UINT16) && (fileHeader->Attributes & FFS_ATTRIB_TAIL_PRESENT)) {
+        // Check file tail;
+        UINT16 tailValue = readUnaligned((UINT16*)body.right(sizeof(UINT16)).constData());
         if (fileHeader->IntegrityCheck.TailReference != (UINT16)~tailValue)
             msgInvalidTailValue = true;
         
@@ -1848,7 +1843,7 @@ USTATUS FfsParser::parseFileHeader(const UByteArray & file, const UINT32 localOf
     if (msgInvalidDataChecksum)
         msg(usprintf("%s: invalid data checksum %02Xh, should be %02Xh", __FUNCTION__, fileHeader->IntegrityCheck.Checksum.File, calculatedData), index);
     if (msgInvalidTailValue)
-        msg(usprintf("%s: invalid tail value %04Xh", __FUNCTION__, *(const UINT16*)tail.constData()), index);
+        msg(usprintf("%s: invalid tail value %04Xh", __FUNCTION__, readUnaligned((const UINT16*)tail.constData())), index);
     if (msgUnknownType)
         msg(usprintf("%s: unknown file type %02Xh", __FUNCTION__, fileHeader->Type), index);
     
@@ -2200,13 +2195,11 @@ USTATUS FfsParser::parseCommonSectionHeader(const UByteArray & section, const UI
     UINT32 headerSize = sizeof(EFI_COMMON_SECTION_HEADER);
     if (ffsVersion == 3 && uint24ToUint32(sectionHeader->Size) == EFI_SECTION2_IS_USED)
         headerSize = sizeof(EFI_COMMON_SECTION_HEADER2);
-    UINT8 type = sectionHeader->Type;
-    
-    // Check sanity again
     if ((UINT32)section.size() < headerSize) {
         return U_INVALID_SECTION;
     }
-    
+
+    UINT8 type = sectionHeader->Type;
     UByteArray header = section.left(headerSize);
     UByteArray body = section.mid(headerSize);
     
@@ -2249,25 +2242,24 @@ USTATUS FfsParser::parseCompressedSectionHeader(const UByteArray & section, cons
     const EFI_COMMON_SECTION_HEADER2* section2Header = (const EFI_COMMON_SECTION_HEADER2*)(section.constData());
     
     if (ffsVersion == 3 && uint24ToUint32(sectionHeader->Size) == EFI_SECTION2_IS_USED) { // Check for extended header section
-        const EFI_COMPRESSION_SECTION* compressedSectionHeader = (const EFI_COMPRESSION_SECTION*)(section2Header + 1);
-        if ((UINT32)section.size() < sizeof(EFI_COMMON_SECTION_HEADER2) + sizeof(EFI_COMPRESSION_SECTION))
-            return U_INVALID_SECTION;
         headerSize = sizeof(EFI_COMMON_SECTION_HEADER2) + sizeof(EFI_COMPRESSION_SECTION);
+        if ((UINT32)section.size() < headerSize)
+            return U_INVALID_SECTION;
+
+        const EFI_COMPRESSION_SECTION* compressedSectionHeader = (const EFI_COMPRESSION_SECTION*)(section2Header + 1);
         compressionType = compressedSectionHeader->CompressionType;
         uncompressedLength = compressedSectionHeader->UncompressedLength;
     }
     else { // Normal section
-        const EFI_COMPRESSION_SECTION* compressedSectionHeader = (const EFI_COMPRESSION_SECTION*)(sectionHeader + 1);
         headerSize = sizeof(EFI_COMMON_SECTION_HEADER) + sizeof(EFI_COMPRESSION_SECTION);
+        if ((UINT32)section.size() < headerSize)
+            return U_INVALID_SECTION;
+
+        const EFI_COMPRESSION_SECTION* compressedSectionHeader = (const EFI_COMPRESSION_SECTION*)(sectionHeader + 1);
         compressionType = compressedSectionHeader->CompressionType;
         uncompressedLength = compressedSectionHeader->UncompressedLength;
     }
-    
-    // Check sanity again
-    if ((UINT32)section.size() < headerSize) {
-        return U_INVALID_SECTION;
-    }
-    
+        
     UByteArray header = section.left(headerSize);
     UByteArray body = section.mid(headerSize);
     
@@ -2319,24 +2311,25 @@ USTATUS FfsParser::parseGuidedSectionHeader(const UByteArray & section, const UI
     const EFI_COMMON_SECTION_HEADER2* section2Header = (const EFI_COMMON_SECTION_HEADER2*)(section.constData());
     
     if (ffsVersion == 3 && uint24ToUint32(sectionHeader->Size) == EFI_SECTION2_IS_USED) { // Check for extended header section
-        const EFI_GUID_DEFINED_SECTION* guidDefinedSectionHeader = (const EFI_GUID_DEFINED_SECTION*)(section2Header + 1);
-        if ((UINT32)section.size() < sizeof(EFI_COMMON_SECTION_HEADER2) + sizeof(EFI_GUID_DEFINED_SECTION))
-            return U_INVALID_SECTION;
         headerSize = sizeof(EFI_COMMON_SECTION_HEADER2) + sizeof(EFI_GUID_DEFINED_SECTION);
+        if ((UINT32)section.size() < headerSize)
+            return U_INVALID_SECTION;
+
+        const EFI_GUID_DEFINED_SECTION* guidDefinedSectionHeader = (const EFI_GUID_DEFINED_SECTION*)(section2Header + 1);
         guid = guidDefinedSectionHeader->SectionDefinitionGuid;
         dataOffset = guidDefinedSectionHeader->DataOffset;
         attributes = guidDefinedSectionHeader->Attributes;
     }
     else { // Normal section
-        const EFI_GUID_DEFINED_SECTION* guidDefinedSectionHeader = (const EFI_GUID_DEFINED_SECTION*)(sectionHeader + 1);
         headerSize = sizeof(EFI_COMMON_SECTION_HEADER) + sizeof(EFI_GUID_DEFINED_SECTION);
+        if ((UINT32)section.size() < headerSize)
+            return U_INVALID_SECTION;
+
+        const EFI_GUID_DEFINED_SECTION* guidDefinedSectionHeader = (const EFI_GUID_DEFINED_SECTION*)(sectionHeader + 1);
         guid = guidDefinedSectionHeader->SectionDefinitionGuid;
         dataOffset = guidDefinedSectionHeader->DataOffset;
         attributes = guidDefinedSectionHeader->Attributes;
     }
-    // Check sanity again
-    if ((UINT32)section.size() < headerSize)
-        return U_INVALID_SECTION;
     
     // Check for special GUIDed sections
     UString additionalInfo;
@@ -2350,6 +2343,7 @@ USTATUS FfsParser::parseGuidedSectionHeader(const UByteArray & section, const UI
     bool msgUnknownCertSubtype = false;
     bool msgProcessingRequiredAttributeOnUnknownGuidedSection = false;
     bool msgInvalidCompressedSize = false;
+    bool msgTruncatedSection = false;
     if (baGuid == EFI_GUIDED_SECTION_CRC32) {
         if ((attributes & EFI_GUIDED_SECTION_AUTH_STATUS_VALID) == 0) { // Check that AuthStatusValid attribute is set on compressed GUIDed sections
             msgNoAuthStatusAttribute = true;
@@ -2358,7 +2352,7 @@ USTATUS FfsParser::parseGuidedSectionHeader(const UByteArray & section, const UI
         if ((UINT32)section.size() < headerSize + sizeof(UINT32))
             return U_INVALID_SECTION;
         
-        UINT32 crc = *(UINT32*)(section.constData() + headerSize);
+        UINT32 crc = readUnaligned((UINT32*)(section.constData() + headerSize));
         additionalInfo += UString("\nChecksum type: CRC32");
         // Calculate CRC32 of section data
         UINT32 calculated = (UINT32)crc32(0, (const UINT8*)section.constData() + dataOffset, (uInt)(section.size() - dataOffset));
@@ -2461,8 +2455,14 @@ USTATUS FfsParser::parseGuidedSectionHeader(const UByteArray & section, const UI
     }
     
     UByteArray header = section.left(dataOffset);
-    UByteArray body = section.mid(dataOffset);
-    
+    UByteArray body;
+    if (dataOffset >= section.size()) {
+        msgTruncatedSection = true;
+    }
+    else {
+        body = section.mid(dataOffset);
+    }
+
     // Get info
     UString name = guidToUString(guid);
     UString info = UString("Section GUID: ") + guidToUString(guid, false) +
@@ -2504,6 +2504,8 @@ USTATUS FfsParser::parseGuidedSectionHeader(const UByteArray & section, const UI
             msg(usprintf("%s: processing required bit set for GUIDed section with unknown GUID", __FUNCTION__), index);
         if (msgInvalidCompressedSize)
             msg(usprintf("%s: AMD Zlib-compressed section with invalid compressed size", __FUNCTION__), index);
+        if (msgTruncatedSection)
+            msg(usprintf("%s: truncated section with DataOffset %04Xh and SectionSize %04Xh", __FUNCTION__, dataOffset, (UINT16)section.size()), index);
     }
     
     return U_SUCCESS;
@@ -2532,24 +2534,24 @@ USTATUS FfsParser::parseFreeformGuidedSectionHeader(const UByteArray & section, 
     const EFI_COMMON_SECTION_HEADER2* section2Header = (const EFI_COMMON_SECTION_HEADER2*)(section.constData());
     
     if (ffsVersion == 3 && uint24ToUint32(sectionHeader->Size) == EFI_SECTION2_IS_USED) { // Check for extended header section
-        const EFI_FREEFORM_SUBTYPE_GUID_SECTION* fsgSectionHeader = (const EFI_FREEFORM_SUBTYPE_GUID_SECTION*)(section2Header + 1);
-        if ((UINT32)section.size() < sizeof(EFI_COMMON_SECTION_HEADER2) + sizeof(EFI_FREEFORM_SUBTYPE_GUID_SECTION))
-            return U_INVALID_SECTION;
         headerSize = sizeof(EFI_COMMON_SECTION_HEADER2) + sizeof(EFI_FREEFORM_SUBTYPE_GUID_SECTION);
+        if ((UINT32)section.size() < headerSize)
+            return U_INVALID_SECTION;
+
+        const EFI_FREEFORM_SUBTYPE_GUID_SECTION* fsgSectionHeader = (const EFI_FREEFORM_SUBTYPE_GUID_SECTION*)(section2Header + 1);
         guid = fsgSectionHeader->SubTypeGuid;
         type = section2Header->Type;
     }
     else { // Normal section
-        const EFI_FREEFORM_SUBTYPE_GUID_SECTION* fsgSectionHeader = (const EFI_FREEFORM_SUBTYPE_GUID_SECTION*)(sectionHeader + 1);
         headerSize = sizeof(EFI_COMMON_SECTION_HEADER) + sizeof(EFI_FREEFORM_SUBTYPE_GUID_SECTION);
+        if ((UINT32)section.size() < headerSize)
+            return U_INVALID_SECTION;
+
+        const EFI_FREEFORM_SUBTYPE_GUID_SECTION* fsgSectionHeader = (const EFI_FREEFORM_SUBTYPE_GUID_SECTION*)(sectionHeader + 1);
         guid = fsgSectionHeader->SubTypeGuid;
         type = sectionHeader->Type;
     }
-    
-    // Check sanity again
-    if ((UINT32)section.size() < headerSize)
-        return U_INVALID_SECTION;
-    
+        
     UByteArray header = section.left(headerSize);
     UByteArray body = section.mid(headerSize);
     
@@ -2601,22 +2603,24 @@ USTATUS FfsParser::parseVersionSectionHeader(const UByteArray & section, const U
     const EFI_COMMON_SECTION_HEADER2* section2Header = (const EFI_COMMON_SECTION_HEADER2*)(section.constData());
     
     if (ffsVersion == 3 && uint24ToUint32(sectionHeader->Size) == EFI_SECTION2_IS_USED) { // Check for extended header section
-        const EFI_VERSION_SECTION* versionHeader = (const EFI_VERSION_SECTION*)(section2Header + 1);
         headerSize = sizeof(EFI_COMMON_SECTION_HEADER2) + sizeof(EFI_VERSION_SECTION);
+        if ((UINT32)section.size() < headerSize)
+            return U_INVALID_SECTION;
+
+        const EFI_VERSION_SECTION* versionHeader = (const EFI_VERSION_SECTION*)(section2Header + 1);
         buildNumber = versionHeader->BuildNumber;
         type = section2Header->Type;
     }
     else { // Normal section
-        const EFI_VERSION_SECTION* versionHeader = (const EFI_VERSION_SECTION*)(sectionHeader + 1);
         headerSize = sizeof(EFI_COMMON_SECTION_HEADER) + sizeof(EFI_VERSION_SECTION);
+        if ((UINT32)section.size() < headerSize)
+            return U_INVALID_SECTION;
+
+        const EFI_VERSION_SECTION* versionHeader = (const EFI_VERSION_SECTION*)(sectionHeader + 1);
         buildNumber = versionHeader->BuildNumber;
         type = sectionHeader->Type;
     }
-    
-    // Check sanity again
-    if ((UINT32)section.size() < headerSize)
-        return U_INVALID_SECTION;
-    
+        
     UByteArray header = section.left(headerSize);
     UByteArray body = section.mid(headerSize);
     
@@ -2660,21 +2664,23 @@ USTATUS FfsParser::parsePostcodeSectionHeader(const UByteArray & section, const 
     const EFI_COMMON_SECTION_HEADER2* section2Header = (const EFI_COMMON_SECTION_HEADER2*)(section.constData());
     
     if (ffsVersion == 3 && uint24ToUint32(sectionHeader->Size) == EFI_SECTION2_IS_USED) { // Check for extended header section
-        const POSTCODE_SECTION* postcodeHeader = (const POSTCODE_SECTION*)(section2Header + 1);
         headerSize = sizeof(EFI_COMMON_SECTION_HEADER2) + sizeof(POSTCODE_SECTION);
+        if ((UINT32)section.size() < headerSize)
+            return U_INVALID_SECTION;
+
+        const POSTCODE_SECTION* postcodeHeader = (const POSTCODE_SECTION*)(section2Header + 1);
         postCode = postcodeHeader->Postcode;
         type = section2Header->Type;
     }
     else { // Normal section
-        const POSTCODE_SECTION* postcodeHeader = (const POSTCODE_SECTION*)(sectionHeader + 1);
         headerSize = sizeof(EFI_COMMON_SECTION_HEADER) + sizeof(POSTCODE_SECTION);
+        if ((UINT32)section.size() < headerSize)
+            return U_INVALID_SECTION;
+
+        const POSTCODE_SECTION* postcodeHeader = (const POSTCODE_SECTION*)(sectionHeader + 1);
         postCode = postcodeHeader->Postcode;
         type = sectionHeader->Type;
     }
-    
-    // Check sanity again
-    if ((UINT32)section.size() < headerSize)
-        return U_INVALID_SECTION;
     
     UByteArray header = section.left(headerSize);
     UByteArray body = section.mid(headerSize);
@@ -2971,7 +2977,7 @@ USTATUS FfsParser::parseDepexSectionBody(const UModelIndex & index)
         return U_DEPEX_PARSE_FAILED;
     }
     
-    const EFI_GUID * guid;
+    const EFI_GUID *guid;
     const UINT8* current = (const UINT8*)body.constData();
     
     // Special cases of first opcode
