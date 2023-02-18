@@ -281,8 +281,13 @@ USTATUS NvramParser::parseNvarStore(const UModelIndex & index)
             }
             
             // Include name and GUID into the header and remove them from body
-            header = data.mid(offset, sizeof(NVAR_ENTRY_HEADER) + nameOffset + nameSize);
-            body = body.mid(nameOffset + nameSize);
+            if (data.size() < offset + sizeof(NVAR_ENTRY_HEADER) + nameOffset + nameSize || body.size() < nameOffset + nameSize) {
+                isInvalid = true;
+            }
+            else {
+                header = data.mid(offset, sizeof(NVAR_ENTRY_HEADER) + nameOffset + nameSize);
+                body = body.mid(nameOffset + nameSize);
+            }
         }
     parsing_done:
         UString info;
@@ -349,10 +354,13 @@ USTATUS NvramParser::parseNvarStore(const UModelIndex & index)
         model->setParsingData(varIndex, UByteArray((const char*)&pdata, sizeof(pdata)));
         
         // Show messages
-        if (msgUnknownExtDataFormat) msg(usprintf("%s: unknown extended data format", __FUNCTION__), varIndex);
-        if (msgExtHeaderTooLong)     msg(usprintf("%s: extended header size (%Xh) is greater than body size (%Xh)", __FUNCTION__,
+        if (msgUnknownExtDataFormat)
+            msg(usprintf("%s: unknown extended data format", __FUNCTION__), varIndex);
+        if (msgExtHeaderTooLong)
+            msg(usprintf("%s: extended header size (%Xh) is greater than body size (%Xh)", __FUNCTION__,
                                                   extendedHeaderSize, (UINT32)body.size()), varIndex);
-        if (msgExtDataTooShort)      msg(usprintf("%s: extended header size (%Xh) is too small for timestamp and hash", __FUNCTION__,
+        if (msgExtDataTooShort)
+            msg(usprintf("%s: extended header size (%Xh) is too small for timestamp and hash", __FUNCTION__,
                                                   (UINT32)tail.size()), varIndex);
         
         // Try parsing the entry data as NVAR storage if it begins with NVAR signature
@@ -434,7 +442,7 @@ USTATUS NvramParser::parseNvramVolumeBody(const UModelIndex & index)
         }
         
         // Check that current store is fully present in input
-        if (storeSize > (UINT32)data.size() || storeOffset + storeSize > (UINT32)data.size()) {
+        if ((UINT32)data.size() < storeOffset + storeSize || (UINT32)data.size() < storeOffset || (UINT32)data.size() < storeSize) {
             // Mark the rest as padding and finish parsing
             UByteArray padding = data.mid(storeOffset);
             

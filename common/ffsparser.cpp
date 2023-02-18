@@ -337,7 +337,7 @@ USTATUS FfsParser::parseIntelImage(const UByteArray & intelImage, const UINT32 l
     if (regionSection->MeLimit) {
         me.offset = calculateRegionOffset(regionSection->MeBase);
         me.length = calculateRegionSize(regionSection->MeBase, regionSection->MeLimit);
-        if ((UINT32)intelImage.size() < me.offset + me.length) {
+        if ((UINT32)intelImage.size() < me.offset + me.length || (UINT32)intelImage.size() < me.offset || (UINT32)intelImage.size() < me.length) {
             msg(usprintf("%s: ", __FUNCTION__)
                 + itemSubtypeToUString(Types::Region, me.type)
                 + UString(" region is located outside of the opened image. If your system uses dual-chip storage, please append another part to the opened image"),
@@ -366,7 +366,7 @@ USTATUS FfsParser::parseIntelImage(const UByteArray & intelImage, const UINT32 l
             bios.length = (UINT32)intelImage.size() - bios.offset;
         }
 
-        if ((UINT32)intelImage.size() < bios.offset + bios.length) {
+        if ((UINT32)intelImage.size() < bios.offset + bios.length || (UINT32)intelImage.size() < bios.offset || (UINT32)intelImage.size() < bios.length) {
             msg(usprintf("%s: ", __FUNCTION__)
                 + itemSubtypeToUString(Types::Region, bios.type)
                 + UString(" region is located outside of the opened image. If your system uses dual-chip storage, please append another part to the opened image"),
@@ -394,7 +394,7 @@ USTATUS FfsParser::parseIntelImage(const UByteArray & intelImage, const UINT32 l
             region.offset = calculateRegionOffset(*RegionBase);
             region.length = calculateRegionSize(*RegionBase, *RegionLimit);
             if (region.length != 0) {
-                if ((UINT32)intelImage.size() < region.offset + region.length) {
+                if ((UINT32)intelImage.size() < region.offset + region.length || (UINT32)intelImage.size() < region.length || (UINT32)intelImage.size() < region.length) {
                     msg(usprintf("%s: ", __FUNCTION__)
                         + itemSubtypeToUString(Types::Region, region.type)
                         + UString(" region is located outside of the opened image. If your system uses dual-chip storage, please append another part to the opened image"),
@@ -2355,6 +2355,9 @@ USTATUS FfsParser::parseGuidedSectionHeader(const UByteArray & section, const UI
         UINT32 crc = readUnaligned((UINT32*)(section.constData() + headerSize));
         additionalInfo += UString("\nChecksum type: CRC32");
         // Calculate CRC32 of section data
+        if ((UINT32)section.size() < dataOffset)
+            return U_INVALID_SECTION;
+
         UINT32 calculated = (UINT32)crc32(0, (const UINT8*)section.constData() + dataOffset, (uInt)(section.size() - dataOffset));
         if (crc == calculated) {
             additionalInfo += usprintf("\nChecksum: %08Xh, valid", crc);
@@ -2422,11 +2425,7 @@ USTATUS FfsParser::parseGuidedSectionHeader(const UByteArray & section, const UI
         
         // Adjust dataOffset
         dataOffset += certLength;
-        
-        // Check section size once again
-        if ((UINT32)section.size() < dataOffset)
-            return U_INVALID_SECTION;
-        
+                
         // Check certificate type
         if (certType == WIN_CERT_TYPE_EFI_GUID) {
             additionalInfo += UString("\nCertificate type: UEFI");
@@ -2454,14 +2453,12 @@ USTATUS FfsParser::parseGuidedSectionHeader(const UByteArray & section, const UI
         msgProcessingRequiredAttributeOnUnknownGuidedSection = true;
     }
     
+    // Check section size once again
+    if ((UINT32)section.size() < dataOffset)
+        return U_INVALID_SECTION;
+
     UByteArray header = section.left(dataOffset);
-    UByteArray body;
-    if (dataOffset >= section.size()) {
-        msgTruncatedSection = true;
-    }
-    else {
-        body = section.mid(dataOffset);
-    }
+    UByteArray body = section.mid(dataOffset);
 
     // Get info
     UString name = guidToUString(guid);
