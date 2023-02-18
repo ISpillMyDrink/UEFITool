@@ -394,7 +394,7 @@ USTATUS FfsParser::parseIntelImage(const UByteArray & intelImage, const UINT32 l
             region.offset = calculateRegionOffset(*RegionBase);
             region.length = calculateRegionSize(*RegionBase, *RegionLimit);
             if (region.length != 0) {
-                if ((UINT32)intelImage.size() < region.offset + region.length || (UINT32)intelImage.size() < region.length || (UINT32)intelImage.size() < region.length) {
+                if ((UINT32)intelImage.size() < region.offset + region.length || (UINT32)intelImage.size() < region.offset || (UINT32)intelImage.size() < region.length) {
                     msg(usprintf("%s: ", __FUNCTION__)
                         + itemSubtypeToUString(Types::Region, region.type)
                         + UString(" region is located outside of the opened image. If your system uses dual-chip storage, please append another part to the opened image"),
@@ -2343,7 +2343,6 @@ USTATUS FfsParser::parseGuidedSectionHeader(const UByteArray & section, const UI
     bool msgUnknownCertSubtype = false;
     bool msgProcessingRequiredAttributeOnUnknownGuidedSection = false;
     bool msgInvalidCompressedSize = false;
-    bool msgTruncatedSection = false;
     if (baGuid == EFI_GUIDED_SECTION_CRC32) {
         if ((attributes & EFI_GUIDED_SECTION_AUTH_STATUS_VALID) == 0) { // Check that AuthStatusValid attribute is set on compressed GUIDed sections
             msgNoAuthStatusAttribute = true;
@@ -2501,8 +2500,6 @@ USTATUS FfsParser::parseGuidedSectionHeader(const UByteArray & section, const UI
             msg(usprintf("%s: processing required bit set for GUIDed section with unknown GUID", __FUNCTION__), index);
         if (msgInvalidCompressedSize)
             msg(usprintf("%s: AMD Zlib-compressed section with invalid compressed size", __FUNCTION__), index);
-        if (msgTruncatedSection)
-            msg(usprintf("%s: truncated section with DataOffset %04Xh and SectionSize %04Xh", __FUNCTION__, dataOffset, (UINT16)section.size()), index);
     }
     
     return U_SUCCESS;
