@@ -87,6 +87,6 @@ intel_acm_t::header_t::~header_t() {
 }
 
 void intel_acm_t::header_t::_clean_up() {
-    if (!n_rsa_exponent) {
-    }
+    //if (!n_rsa_exponent) {
+    //}
 }

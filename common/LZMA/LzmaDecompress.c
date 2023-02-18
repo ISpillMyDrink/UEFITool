@@ -94,8 +94,11 @@ LzmaGetInfo (
     )
 {
     UINT64 DecodedSize;
-    ASSERT(SourceSize >= LZMA_HEADER_SIZE);
     (void)SourceSize;
+
+    if (SourceSize < LZMA_HEADER_SIZE) {
+         return U_INVALID_PARAMETER;
+    }
 
     DecodedSize = GetDecodedSizeOfBuf((UINT8*)Source);
 

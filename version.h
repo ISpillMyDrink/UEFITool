@@ -14,6 +14,6 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 #ifndef VERSION_H
 #define VERSION_H
 
-#define PROGRAM_VERSION "NE alpha 64" " (ISpillMyDrink Edition)"
+#define PROGRAM_VERSION "NE alpha 65" " (ISpillMyDrink Edition)"
 
 #endif // VERSION_H

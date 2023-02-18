@@ -281,8 +281,13 @@ USTATUS NvramParser::parseNvarStore(const UModelIndex & index)
             }
             
             // Include name and GUID into the header and remove them from body
-            header = data.mid(offset, sizeof(NVAR_ENTRY_HEADER) + nameOffset + nameSize);
-            body = body.mid(nameOffset + nameSize);
+            if (data.size() < offset + sizeof(NVAR_ENTRY_HEADER) + nameOffset + nameSize || body.size() < nameOffset + nameSize) {
+                isInvalid = true;
+            }
+            else {
+                header = data.mid(offset, sizeof(NVAR_ENTRY_HEADER) + nameOffset + nameSize);
+                body = body.mid(nameOffset + nameSize);
+            }
         }
     parsing_done:
         UString info;
@@ -349,10 +354,13 @@ USTATUS NvramParser::parseNvarStore(const UModelIndex & index)
         model->setParsingData(varIndex, UByteArray((const char*)&pdata, sizeof(pdata)));
         
         // Show messages
-        if (msgUnknownExtDataFormat) msg(usprintf("%s: unknown extended data format", __FUNCTION__), varIndex);
-        if (msgExtHeaderTooLong)     msg(usprintf("%s: extended header size (%Xh) is greater than body size (%Xh)", __FUNCTION__,
+        if (msgUnknownExtDataFormat)
+            msg(usprintf("%s: unknown extended data format", __FUNCTION__), varIndex);
+        if (msgExtHeaderTooLong)
+            msg(usprintf("%s: extended header size (%Xh) is greater than body size (%Xh)", __FUNCTION__,
                                                   extendedHeaderSize, (UINT32)body.size()), varIndex);
-        if (msgExtDataTooShort)      msg(usprintf("%s: extended header size (%Xh) is too small for timestamp and hash", __FUNCTION__,
+        if (msgExtDataTooShort)
+            msg(usprintf("%s: extended header size (%Xh) is too small for timestamp and hash", __FUNCTION__,
                                                   (UINT32)tail.size()), varIndex);
         
         // Try parsing the entry data as NVAR storage if it begins with NVAR signature
@@ -429,13 +437,12 @@ USTATUS NvramParser::parseNvramVolumeBody(const UModelIndex & index)
         // Get store size
         UINT32 storeSize = 0;
         result = getStoreSize(data, storeOffset, storeSize);
-        if (result) {
-            msg(usprintf("%s: getStoreSize failed with error ", __FUNCTION__) + errorCodeToUString(result), index);
+        if (result || storeSize == 0) {
             return result;
         }
         
         // Check that current store is fully present in input
-        if (storeSize > (UINT32)data.size() || storeOffset + storeSize > (UINT32)data.size()) {
+        if ((UINT32)data.size() < storeOffset + storeSize || (UINT32)data.size() < storeOffset || (UINT32)data.size() < storeSize) {
             // Mark the rest as padding and finish parsing
             UByteArray padding = data.mid(storeOffset);
             
@@ -528,15 +535,18 @@ USTATUS NvramParser::findNextStore(const UModelIndex & index, const UByteArray &
     if (dataSize < sizeof(UINT32))
         return U_STORES_NOT_FOUND;
     
-    // TODO: add checks for restSize
-    // TODO: remove misaligned access by doing the signature checks differently, the current way is UB is C++
     // TODO: rewrite this all as Kaitai-based parser
     UINT32 offset = storeOffset;
     for (; offset < dataSize - sizeof(UINT32); offset++) {
         const UINT32* currentPos = (const UINT32*)(volume.constData() + offset);
+        UINT32 restSize = dataSize - offset;
+
         if (readUnaligned(currentPos) == NVRAM_VSS_STORE_SIGNATURE 
             || readUnaligned(currentPos) == NVRAM_APPLE_SVS_STORE_SIGNATURE 
             || readUnaligned(currentPos) == NVRAM_APPLE_NSS_STORE_SIGNATURE) { // $VSS, $SVS or $NSS signatures found, perform checks
+            if (restSize < sizeof(VSS_VARIABLE_STORE_HEADER))
+                continue;
+
             const VSS_VARIABLE_STORE_HEADER* vssHeader = (const VSS_VARIABLE_STORE_HEADER*)currentPos;
             if (vssHeader->Format != NVRAM_VSS_VARIABLE_STORE_FORMATTED) {
                 msg(usprintf("%s: VSS store candidate at offset %Xh skipped, has invalid format %02Xh", __FUNCTION__, localOffset + offset, vssHeader->Format), index);
@@ -551,10 +561,16 @@ USTATUS NvramParser::findNextStore(const UModelIndex & index, const UByteArray &
         }
         else if (readUnaligned(currentPos) == NVRAM_VSS2_AUTH_VAR_KEY_DATABASE_GUID_PART1 
             || readUnaligned(currentPos) == NVRAM_VSS2_STORE_GUID_PART1) { // VSS2 store signatures found, perform checks
+            if (restSize < sizeof(EFI_GUID))
+                continue;
+
             UByteArray guid = UByteArray(volume.constData() + offset, sizeof(EFI_GUID));
             if (guid != NVRAM_VSS2_AUTH_VAR_KEY_DATABASE_GUID && guid != NVRAM_VSS2_STORE_GUID) // Check the whole signature
                 continue;
             
+            if (restSize < sizeof(VSS2_VARIABLE_STORE_HEADER))
+                continue;
+
             const VSS2_VARIABLE_STORE_HEADER* vssHeader = (const VSS2_VARIABLE_STORE_HEADER*)currentPos;
             if (vssHeader->Format != NVRAM_VSS_VARIABLE_STORE_FORMATTED) {
                 msg(usprintf("%s: VSS2 store candidate at offset %Xh skipped, has invalid format %02Xh", __FUNCTION__, localOffset + offset, vssHeader->Format), index);
@@ -568,6 +584,8 @@ USTATUS NvramParser::findNextStore(const UModelIndex & index, const UByteArray &
             break;
         }
         else if (readUnaligned(currentPos) == NVRAM_FDC_VOLUME_SIGNATURE) { // FDC signature found
+            if (restSize < sizeof(FDC_VOLUME_HEADER))
+                continue;
             const FDC_VOLUME_HEADER* fdcHeader = (const FDC_VOLUME_HEADER*)currentPos;
             if (fdcHeader->Size == 0 || fdcHeader->Size == 0xFFFFFFFF) {
                 msg(usprintf("%s: FDC store candidate at offset %Xh skipped, has invalid size %Xh", __FUNCTION__, localOffset + offset, fdcHeader->Size), index);
@@ -578,6 +596,8 @@ USTATUS NvramParser::findNextStore(const UModelIndex & index, const UByteArray &
         }
         else if (readUnaligned(currentPos) == NVRAM_APPLE_FSYS_STORE_SIGNATURE 
             || readUnaligned(currentPos) == NVRAM_APPLE_GAID_STORE_SIGNATURE) { // Fsys or Gaid signature found
+            if (restSize < sizeof(APPLE_FSYS_STORE_HEADER))
+                continue;
             const APPLE_FSYS_STORE_HEADER* fsysHeader = (const APPLE_FSYS_STORE_HEADER*)currentPos;
             if (fsysHeader->Size == 0 || fsysHeader->Size == 0xFFFF) {
                 msg(usprintf("%s: Fsys store candidate at offset %Xh skipped, has invalid size %Xh", __FUNCTION__, localOffset + offset, fsysHeader->Size), index);
@@ -588,6 +608,9 @@ USTATUS NvramParser::findNextStore(const UModelIndex & index, const UByteArray &
         }
         else if (readUnaligned(currentPos) == NVRAM_EVSA_STORE_SIGNATURE) { //EVSA signature found
             if (offset < sizeof(UINT32))
+                continue;
+
+            if (restSize < sizeof(EVSA_STORE_ENTRY) - sizeof(UINT32))
                 continue;
             
             const EVSA_STORE_ENTRY* evsaHeader = (const EVSA_STORE_ENTRY*)(currentPos - 1);
@@ -605,11 +628,16 @@ USTATUS NvramParser::findNextStore(const UModelIndex & index, const UByteArray &
         }
         else if (readUnaligned(currentPos) == NVRAM_MAIN_STORE_VOLUME_GUID_DATA1 
             || readUnaligned(currentPos) == EDKII_WORKING_BLOCK_SIGNATURE_GUID_DATA1) { // Possible FTW block signature found
+            if (restSize < sizeof(EFI_GUID))
+                continue;
+
             UByteArray guid = UByteArray(volume.constData() + offset, sizeof(EFI_GUID));
             if (guid != NVRAM_MAIN_STORE_VOLUME_GUID && guid != EDKII_WORKING_BLOCK_SIGNATURE_GUID && guid != VSS2_WORKING_BLOCK_SIGNATURE_GUID) // Check the whole signature
                 continue;
             
             // Detect header variant based on WriteQueueSize
+            if (restSize < sizeof(EFI_FAULT_TOLERANT_WORKING_BLOCK_HEADER32))
+                continue;
             const EFI_FAULT_TOLERANT_WORKING_BLOCK_HEADER32* ftwHeader = (const EFI_FAULT_TOLERANT_WORKING_BLOCK_HEADER32*)currentPos;
             if (ftwHeader->WriteQueueSize % 0x10 == 0x04) { // Header with 32 bit WriteQueueSize
                 if (ftwHeader->WriteQueueSize == 0 || ftwHeader->WriteQueueSize == 0xFFFFFFFF) {
@@ -618,6 +646,9 @@ USTATUS NvramParser::findNextStore(const UModelIndex & index, const UByteArray &
                 }
             }
             else if (ftwHeader->WriteQueueSize % 0x10 == 0x00) { // Header with 64 bit WriteQueueSize
+                if (restSize < sizeof(EFI_FAULT_TOLERANT_WORKING_BLOCK_HEADER64))
+                    continue;
+
                 const EFI_FAULT_TOLERANT_WORKING_BLOCK_HEADER64* ftw64Header = (const EFI_FAULT_TOLERANT_WORKING_BLOCK_HEADER64*)currentPos;
                 if (ftw64Header->WriteQueueSize == 0 || ftw64Header->WriteQueueSize >= 0xFFFFFFFF) {
                     msg(usprintf("%s: FTW block candidate at offset %Xh skipped, has invalid body size %" PRIX64 "h", __FUNCTION__, localOffset + offset, ftw64Header->WriteQueueSize), index);
@@ -631,6 +662,9 @@ USTATUS NvramParser::findNextStore(const UModelIndex & index, const UByteArray &
             break;
         }
         else if (readUnaligned(currentPos) == NVRAM_PHOENIX_FLASH_MAP_SIGNATURE_PART1) {// Phoenix SCT flash map
+            if (restSize < NVRAM_PHOENIX_FLASH_MAP_SIGNATURE_LENGTH)
+                continue;
+
             UByteArray signature = UByteArray(volume.constData() + offset, NVRAM_PHOENIX_FLASH_MAP_SIGNATURE_LENGTH);
             if (signature != NVRAM_PHOENIX_FLASH_MAP_SIGNATURE) // Check the whole signature
                 continue;
@@ -639,6 +673,9 @@ USTATUS NvramParser::findNextStore(const UModelIndex & index, const UByteArray &
             break;
         }
         else if (readUnaligned(currentPos) == NVRAM_PHOENIX_CMDB_HEADER_SIGNATURE) { // Phoenix SCT CMDB store
+            if (restSize < sizeof(PHOENIX_CMDB_HEADER))
+                continue;
+
             const PHOENIX_CMDB_HEADER* cmdbHeader = (const PHOENIX_CMDB_HEADER*)currentPos;
             
             // Check size
@@ -649,9 +686,10 @@ USTATUS NvramParser::findNextStore(const UModelIndex & index, const UByteArray &
             break;
         }
         else if (readUnaligned(currentPos) == INTEL_MICROCODE_HEADER_VERSION_1) {// Intel microcode
+            if (restSize < sizeof(INTEL_MICROCODE_HEADER))
+                continue;
+
             const INTEL_MICROCODE_HEADER* ucodeHeader = (const INTEL_MICROCODE_HEADER*)currentPos;
-            
-            // TotalSize is greater then DataSize and is multiple of 1024
             if (FALSE == ffsParser->microcodeHeaderValid(ucodeHeader)) {
                 continue;
             }
@@ -660,7 +698,10 @@ USTATUS NvramParser::findNextStore(const UModelIndex & index, const UByteArray &
             break;
         }
         else if (readUnaligned(currentPos) == OEM_ACTIVATION_PUBKEY_MAGIC) { // SLIC pubkey
-            if (offset < 4 * sizeof(UINT32))
+            if (offset < 4*sizeof(UINT32))
+                continue;
+
+            if (restSize < sizeof(OEM_ACTIVATION_PUBKEY) - 4*sizeof(UINT32))
                 continue;
             
             const OEM_ACTIVATION_PUBKEY* pubkeyHeader = (const OEM_ACTIVATION_PUBKEY*)(currentPos - 4);
@@ -669,13 +710,17 @@ USTATUS NvramParser::findNextStore(const UModelIndex & index, const UByteArray &
                 continue;
             
             // All checks passed, store found
-            offset -= 4 * sizeof(UINT32);
+            offset -= 4*sizeof(UINT32);
             break;
         }
         else if (readUnaligned(currentPos) == OEM_ACTIVATION_MARKER_WINDOWS_FLAG_PART1) { // SLIC marker
-            if (offset < 26
-                || offset >= dataSize - sizeof(UINT64)
-                || *(const UINT64*)currentPos != OEM_ACTIVATION_MARKER_WINDOWS_FLAG) // Check full windows flag and structure size
+            if (offset < 26)
+                continue;
+
+            if (restSize < sizeof(OEM_ACTIVATION_MARKER) - 26)
+                continue;
+
+            if (readUnaligned((UINT64*)currentPos) != OEM_ACTIVATION_MARKER_WINDOWS_FLAG) // Check full windows flag and structure size
                 continue;
             
             const OEM_ACTIVATION_MARKER* markerHeader = (const OEM_ACTIVATION_MARKER*)(volume.constData() + offset - 26);
@@ -706,27 +751,27 @@ USTATUS NvramParser::findNextStore(const UModelIndex & index, const UByteArray &
 USTATUS NvramParser::getStoreSize(const UByteArray & data, const UINT32 storeOffset, UINT32 & storeSize)
 {
     const UINT32* signature = (const UINT32*)(data.constData() + storeOffset);
-    if (*signature == NVRAM_VSS_STORE_SIGNATURE || *signature == NVRAM_APPLE_SVS_STORE_SIGNATURE || *signature == NVRAM_APPLE_NSS_STORE_SIGNATURE) {
+    if (readUnaligned(signature) == NVRAM_VSS_STORE_SIGNATURE || readUnaligned(signature) == NVRAM_APPLE_SVS_STORE_SIGNATURE || readUnaligned(signature) == NVRAM_APPLE_NSS_STORE_SIGNATURE) {
         const VSS_VARIABLE_STORE_HEADER* vssHeader = (const VSS_VARIABLE_STORE_HEADER*)signature;
         storeSize = vssHeader->Size;
     }
-    else if (*signature == NVRAM_VSS2_AUTH_VAR_KEY_DATABASE_GUID_PART1 || *signature == NVRAM_VSS2_STORE_GUID_PART1) {
+    else if (readUnaligned(signature) == NVRAM_VSS2_AUTH_VAR_KEY_DATABASE_GUID_PART1 || readUnaligned(signature) == NVRAM_VSS2_STORE_GUID_PART1) {
         const VSS2_VARIABLE_STORE_HEADER* vssHeader = (const VSS2_VARIABLE_STORE_HEADER*)signature;
         storeSize = vssHeader->Size;
     }
-    else if (*signature == NVRAM_FDC_VOLUME_SIGNATURE) {
+    else if (readUnaligned(signature) == NVRAM_FDC_VOLUME_SIGNATURE) {
         const FDC_VOLUME_HEADER* fdcHeader = (const FDC_VOLUME_HEADER*)signature;
         storeSize = fdcHeader->Size;
     }
-    else if (*signature == NVRAM_APPLE_FSYS_STORE_SIGNATURE || *signature == NVRAM_APPLE_GAID_STORE_SIGNATURE) {
+    else if (readUnaligned(signature) == NVRAM_APPLE_FSYS_STORE_SIGNATURE || readUnaligned(signature) == NVRAM_APPLE_GAID_STORE_SIGNATURE) {
         const APPLE_FSYS_STORE_HEADER* fsysHeader = (const APPLE_FSYS_STORE_HEADER*)signature;
         storeSize = fsysHeader->Size;
     }
-    else if (*(signature + 1) == NVRAM_EVSA_STORE_SIGNATURE) {
+    else if (readUnaligned(signature + 1) == NVRAM_EVSA_STORE_SIGNATURE) {
         const EVSA_STORE_ENTRY* evsaHeader = (const EVSA_STORE_ENTRY*)signature;
         storeSize = evsaHeader->StoreSize;
     }
-    else if (*signature == NVRAM_MAIN_STORE_VOLUME_GUID_DATA1 || *signature == EDKII_WORKING_BLOCK_SIGNATURE_GUID_DATA1) {
+    else if (readUnaligned(signature) == NVRAM_MAIN_STORE_VOLUME_GUID_DATA1 || readUnaligned(signature) == EDKII_WORKING_BLOCK_SIGNATURE_GUID_DATA1) {
         const EFI_FAULT_TOLERANT_WORKING_BLOCK_HEADER32* ftwHeader = (const EFI_FAULT_TOLERANT_WORKING_BLOCK_HEADER32*)signature;
         if (ftwHeader->WriteQueueSize % 0x10 == 0x04) { // Header with 32 bit WriteQueueSize
             storeSize = sizeof(EFI_FAULT_TOLERANT_WORKING_BLOCK_HEADER32) + ftwHeader->WriteQueueSize;
@@ -736,27 +781,28 @@ USTATUS NvramParser::getStoreSize(const UByteArray & data, const UINT32 storeOff
             storeSize = sizeof(EFI_FAULT_TOLERANT_WORKING_BLOCK_HEADER64) + (UINT32)ftw64Header->WriteQueueSize;
         }
     }
-    else if (*signature == NVRAM_PHOENIX_FLASH_MAP_SIGNATURE_PART1) { // Phoenix SCT flash map
+    else if (readUnaligned(signature) == NVRAM_PHOENIX_FLASH_MAP_SIGNATURE_PART1) { // Phoenix SCT flash map
         const PHOENIX_FLASH_MAP_HEADER* flashMapHeader = (const PHOENIX_FLASH_MAP_HEADER*)signature;
         storeSize = sizeof(PHOENIX_FLASH_MAP_HEADER) + sizeof(PHOENIX_FLASH_MAP_ENTRY) * flashMapHeader->NumEntries;
     }
-    else if (*signature == NVRAM_PHOENIX_CMDB_HEADER_SIGNATURE) { // Phoenix SCT CMDB store
+    else if (readUnaligned(signature) == NVRAM_PHOENIX_CMDB_HEADER_SIGNATURE) { // Phoenix SCT CMDB store
         storeSize = NVRAM_PHOENIX_CMDB_SIZE; // It's a predefined max size, no need to calculate
     }
-    else if (*(signature + 4) == OEM_ACTIVATION_PUBKEY_MAGIC) { // SLIC pubkey
+    else if (readUnaligned(signature + 4) == OEM_ACTIVATION_PUBKEY_MAGIC) { // SLIC pubkey
         const OEM_ACTIVATION_PUBKEY* pubkeyHeader = (const OEM_ACTIVATION_PUBKEY*)signature;
         storeSize = pubkeyHeader->Size;
     }
-    else if (*(const UINT64*)(data.constData() + storeOffset + 26) == OEM_ACTIVATION_MARKER_WINDOWS_FLAG) { // SLIC marker
+    else if (readUnaligned((const UINT64*)(data.constData() + storeOffset + 26)) == OEM_ACTIVATION_MARKER_WINDOWS_FLAG) { // SLIC marker
         const OEM_ACTIVATION_MARKER* markerHeader = (const OEM_ACTIVATION_MARKER*)signature;
         storeSize = markerHeader->Size;
     }
-    else if (*signature == INTEL_MICROCODE_HEADER_VERSION_1) { // Intel microcode, must be checked after SLIC marker because of the same *signature values
+    else if (readUnaligned(signature) == INTEL_MICROCODE_HEADER_VERSION_1) { // Intel microcode, must be checked after SLIC marker because of the same *signature values
         const INTEL_MICROCODE_HEADER* ucodeHeader = (const INTEL_MICROCODE_HEADER*)signature;
         storeSize = ucodeHeader->TotalSize;
     } else {
         return U_INVALID_PARAMETER; // Unreachable
     }
+
     return U_SUCCESS;
 }
 
@@ -1000,7 +1046,7 @@ USTATUS NvramParser::parseFsysStoreHeader(const UByteArray & store, const UINT32
     UByteArray body = store.mid(sizeof(APPLE_FSYS_STORE_HEADER), fsysStoreHeader->Size - sizeof(APPLE_FSYS_STORE_HEADER) - sizeof(UINT32));
     
     // Check store checksum
-    UINT32 storedCrc = *(UINT32*)store.right(sizeof(UINT32)).constData();
+    UINT32 storedCrc = readUnaligned((UINT32*)store.right(sizeof(UINT32)).constData());
     UINT32 calculatedCrc = (UINT32)crc32(0, (const UINT8*)store.constData(), (UINT32)store.size() - sizeof(UINT32));
     
     // Add info
@@ -1235,48 +1281,46 @@ USTATUS NvramParser::parseStoreHeader(const UByteArray & store, const UINT32 loc
     const UINT32* signature = (const UINT32*)store.constData();
     // Check store size
     if (dataSize < sizeof(UINT32)) {
-        msg(usprintf("%s: volume body is too small even for a store signature", __FUNCTION__), parent);
-        return U_SUCCESS;
+        return U_INVALID_STORE_SIZE;
     }
     
     // Check signature and run parser function needed
     // VSS/SVS/NSS store
-    if (*signature == NVRAM_VSS_STORE_SIGNATURE || *signature == NVRAM_APPLE_SVS_STORE_SIGNATURE || *signature == NVRAM_APPLE_NSS_STORE_SIGNATURE)
+    if (readUnaligned(signature) == NVRAM_VSS_STORE_SIGNATURE || readUnaligned(signature) == NVRAM_APPLE_SVS_STORE_SIGNATURE || readUnaligned(signature) == NVRAM_APPLE_NSS_STORE_SIGNATURE)
         return parseVssStoreHeader(store, localOffset, false, parent, index);
     // VSS2 store
-    if (*signature == NVRAM_VSS2_AUTH_VAR_KEY_DATABASE_GUID_PART1 || *signature == NVRAM_VSS2_STORE_GUID_PART1)
+    if (readUnaligned(signature) == NVRAM_VSS2_AUTH_VAR_KEY_DATABASE_GUID_PART1 || readUnaligned(signature) == NVRAM_VSS2_STORE_GUID_PART1)
         return parseVss2StoreHeader(store, localOffset, false, parent, index);
     // FTW store
-    else if (*signature == NVRAM_MAIN_STORE_VOLUME_GUID_DATA1 || *signature == EDKII_WORKING_BLOCK_SIGNATURE_GUID_DATA1)
+    else if (readUnaligned(signature) == NVRAM_MAIN_STORE_VOLUME_GUID_DATA1 || readUnaligned(signature) == EDKII_WORKING_BLOCK_SIGNATURE_GUID_DATA1)
         return parseFtwStoreHeader(store, localOffset, parent, index);
     // FDC store
-    else if (*signature == NVRAM_FDC_VOLUME_SIGNATURE)
+    else if (readUnaligned(signature) == NVRAM_FDC_VOLUME_SIGNATURE)
         return parseFdcStoreHeader(store, localOffset, parent, index);
     // Apple Fsys/Gaid store
-    else if (*signature == NVRAM_APPLE_FSYS_STORE_SIGNATURE || *signature == NVRAM_APPLE_GAID_STORE_SIGNATURE)
+    else if (readUnaligned(signature) == NVRAM_APPLE_FSYS_STORE_SIGNATURE || readUnaligned(signature) == NVRAM_APPLE_GAID_STORE_SIGNATURE)
         return parseFsysStoreHeader(store, localOffset, parent, index);
     // EVSA store
-    else if (dataSize >= 2 * sizeof(UINT32) && *(signature + 1) == NVRAM_EVSA_STORE_SIGNATURE)
+    else if (dataSize >= 2*sizeof(UINT32) && readUnaligned(signature + 1) == NVRAM_EVSA_STORE_SIGNATURE)
         return parseEvsaStoreHeader(store, localOffset, parent, index);
     // Phoenix SCT flash map
-    else if (*signature == NVRAM_PHOENIX_FLASH_MAP_SIGNATURE_PART1)
+    else if (readUnaligned(signature) == NVRAM_PHOENIX_FLASH_MAP_SIGNATURE_PART1)
         return parseFlashMapStoreHeader(store, localOffset, parent, index);
     // Phoenix CMDB store
-    else if (*signature == NVRAM_PHOENIX_CMDB_HEADER_SIGNATURE)
+    else if (readUnaligned(signature) == NVRAM_PHOENIX_CMDB_HEADER_SIGNATURE)
         return parseCmdbStoreHeader(store, localOffset, parent, index);
     // SLIC pubkey
-    else if (dataSize >= 5 * sizeof(UINT32) && *(signature + 4) == OEM_ACTIVATION_PUBKEY_MAGIC)
+    else if (dataSize >= 5*sizeof(UINT32) && readUnaligned(signature + 4) == OEM_ACTIVATION_PUBKEY_MAGIC)
         return parseSlicPubkeyHeader(store, localOffset, parent, index);
     // SLIC marker
-    else if (dataSize >= 34 && *(const UINT64*)(store.constData() + 26) == OEM_ACTIVATION_MARKER_WINDOWS_FLAG)
+    else if (dataSize >= 34 && readUnaligned((UINT64*)(store.constData() + 26)) == OEM_ACTIVATION_MARKER_WINDOWS_FLAG)
         return parseSlicMarkerHeader(store, localOffset, parent, index);
     // Intel microcode
     // Must be checked after SLIC marker because of the same *signature values
-    else if (*signature == INTEL_MICROCODE_HEADER_VERSION_1)
+    else if (readUnaligned(signature) == INTEL_MICROCODE_HEADER_VERSION_1)
         return ffsParser->parseIntelMicrocodeHeader(store, localOffset, parent, index);
     
-    msg(usprintf("parseStoreHeader: don't know how to parse a header with signature %08Xh", *signature), parent);
-    return U_SUCCESS;
+    return U_INVALID_STORE_SIZE;
 }
 
 USTATUS NvramParser::parseFdcStoreBody(const UModelIndex & index)
@@ -1301,7 +1345,7 @@ USTATUS NvramParser::parseFdcStoreBody(const UModelIndex & index)
     
     // Determine if it's a VSS or VSS2 store inside
     UByteArray store = model->body(volumeIndex);
-    if ((UINT32)store.size() >= sizeof(UINT32) && *(const UINT32*)store.constData() == NVRAM_VSS_STORE_SIGNATURE) {
+    if ((UINT32)store.size() >= sizeof(UINT32) && readUnaligned((UINT32*)store.constData()) == NVRAM_VSS_STORE_SIGNATURE) {
         UModelIndex vssIndex;
         status = parseVssStoreHeader(store, (UINT32)(localOffset + model->header(volumeIndex).size()), true, volumeIndex, vssIndex);
         if (status)
@@ -1569,7 +1613,7 @@ USTATUS NvramParser::parseFsysStoreBody(const UModelIndex & index)
     
     // Parse all variables
     while (1) {
-        UINT32 unparsedSize = storeDataSize - offset;
+        UINT32 restSize = storeDataSize - offset;
         UINT32 variableSize = 0;
         
         // Get nameSize and name of the variable
@@ -1578,7 +1622,7 @@ USTATUS NvramParser::parseFsysStoreBody(const UModelIndex & index)
         nameSize &= 0x7F;
         
         // Check sanity
-        if (unparsedSize >= nameSize + sizeof(UINT8)) {
+        if (restSize >= nameSize + sizeof(UINT8)) {
             variableSize = nameSize + sizeof(UINT8);
         }
         
@@ -1607,11 +1651,21 @@ USTATUS NvramParser::parseFsysStoreBody(const UModelIndex & index)
         }
         
         // Get dataSize and data of the variable
-        const UINT16 dataSize = *(UINT16*)(data.constData() + offset + sizeof(UINT8) + nameSize);
-        if (unparsedSize >= sizeof(UINT8) + nameSize + sizeof(UINT16) + dataSize) {
-            variableSize = sizeof(UINT8) + nameSize + sizeof(UINT16) + dataSize;
+        UINT16 dataSize = 0;
+        if (restSize < sizeof(UINT8) + nameSize) {
+            variableSize = 0;
         }
         else {
+            dataSize = readUnaligned((UINT16*)(data.constData() + offset + sizeof(UINT8) + nameSize));
+            if (restSize >= sizeof(UINT8) + nameSize + sizeof(UINT16) + dataSize) {
+                variableSize = sizeof(UINT8) + nameSize + sizeof(UINT16) + dataSize;
+            }
+            else {
+                variableSize = 0;
+            }
+        }
+
+        if (variableSize == 0) {
             // Last variable is bad, add the rest as padding and return
             UByteArray body = data.mid(offset);
             UString info = usprintf("Full size: %Xh (%u)", (UINT32)body.size(), (UINT32)body.size());

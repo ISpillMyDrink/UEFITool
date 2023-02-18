@@ -28,8 +28,12 @@ QVariant TreeModel::data(const UModelIndex &index, int role) const
     }
 #if defined (QT_GUI_LIB)
     else if (role == Qt::BackgroundRole) {
-        if (markingEnabledFlag && marking(index) > 0) {
-            return QBrush((Qt::GlobalColor)marking(index));
+        if (markingEnabledFlag && marking(index) != BootGuardMarking::None) {
+            switch (marking(index)) {
+            case BootGuardMarking::BootGuardFullyInRange: return QBrush((Qt::GlobalColor)(markingDarkModeFlag ? Qt::darkRed    : Qt::red   )); break;
+            case BootGuardMarking::VendorFullyInRange:    return QBrush((Qt::GlobalColor)(markingDarkModeFlag ? Qt::darkCyan   : Qt::cyan  )); break;
+            case BootGuardMarking::PartiallyInRange:      return QBrush((Qt::GlobalColor)(markingDarkModeFlag ? Qt::darkYellow : Qt::yellow)); break;
+            }
         }
     }
 #endif
@@ -338,6 +342,13 @@ void TreeModel::TreeModel::setMarkingEnabled(const bool enabled)
 {
     markingEnabledFlag = enabled;
     
+    emit dataChanged(UModelIndex(), UModelIndex());
+}
+
+void TreeModel::TreeModel::setMarkingDarkMode(const bool enabled)
+{
+    markingDarkModeFlag = enabled;
+
     emit dataChanged(UModelIndex(), UModelIndex());
 }
 

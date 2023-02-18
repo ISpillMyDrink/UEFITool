@@ -27,10 +27,12 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QPalette>
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QSettings>
 #include <QSplitter>
+#include <QStyleFactory>
 #include <QString>
 #include <QTableWidget>
 #include <QTreeView>
